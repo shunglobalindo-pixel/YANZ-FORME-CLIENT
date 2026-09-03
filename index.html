@@ -6329,6 +6329,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
   // ════════════════════════════════════════════════════════════════
   let IMP=null;                 // hasil parse + preview
   let impPlatform='tiktok';
+  const OI_CAT='Penjualan (SKU tak terdaftar)'; // kategori Other Income utk SKU tak dikenal saat import — dipakai riwayat & hapus batch
 
   function setImpPlatform(p){
     impPlatform=p;
@@ -6416,9 +6417,10 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       if(lines===null){if(st)st.innerHTML='<span style="color:#DC2626">❌ Sheet <code>'+(impPlatform==='tiktok'?'OrderSKUList':'orders')+'</code> tak ditemukan. Pastikan platform & file cocok.</span>';return;}
       if(!lines.length){if(st)st.innerHTML='<span style="color:#D97706">⚠️ Tidak ada baris order valid di file ini.</span>';return;}
       const orders=_group(impPlatform,lines);
-      // Order ID yang SUDAH ada (dari Live/input manual) → jangan dobel
+      // Order ID yang SUDAH ada (dari Live/input manual, ATAU import lama → Penjualan/Other Income) → jangan dobel
       let existRefs=new Set();
-      try{const ex=await api('yanz_sales_orders?channel=eq.ecommerce&select=reference');existRefs=new Set(ex.map(x=>String(x.reference)));}catch(e){}
+      try{const ex=await api('yanz_sales_orders?channel=eq.ecommerce&select=reference');ex.forEach(x=>{if(x.reference)existRefs.add(String(x.reference));});}catch(e){}
+      try{const oi=await api('yanz_other_income?category=eq.'+encodeURIComponent(OI_CAT)+'&select=reference');oi.forEach(x=>{if(x.reference)existRefs.add(String(x.reference));});}catch(e){}
       const auto=[],cod=[],skip=[];
       const skuMap=new Map();P.forEach(p=>{if(p.sku)skuMap.set(String(p.sku).toUpperCase(),p);});
       const unknown=new Map();
@@ -6438,7 +6440,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
         });
         if(c.cat==='cod'){o.ready=c.ready;o._approve=!!c.ready;cod.push(o);}else auto.push(o);
       }
-      IMP={platform:impPlatform,fileName:file.name,auto,cod,skip,unknown,autoCreate:false};
+      IMP={platform:impPlatform,fileName:file.name,auto,cod,skip,unknown,autoCreate:true};
       renderImportPreview();
       if(st)st.innerHTML='<span style="color:#16A34A">✓ <strong>'+file.name+'</strong> diparse — '+orders.length+' Order ID. Review di bawah lalu Commit.</span>';
       ev.target.value=''; // izinkan pilih file yang sama lagi
@@ -6543,7 +6545,10 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     }
     for(const oi of other){
       if(oi.amount<=0)continue;
-      try{await api('yanz_other_income',{method:'POST',body:JSON.stringify({income_date:odate,category:'Penjualan (SKU tak terdaftar)',amount:oi.amount,account_id:(ACCOUNTS[0]&&ACCOUNTS[0].id)||null,description:o.platform+' · SKU '+oi.sku,reference:o.orderId})});}catch(e){console.warn('other_income gagal',oi.sku,e.message);}
+      const oiBody={income_date:odate,category:OI_CAT,amount:oi.amount,account_id:(ACCOUNTS[0]&&ACCOUNTS[0].id)||null,description:o.platform+' · SKU '+oi.sku,reference:o.orderId};
+      // Tandai batch import di Other Income juga → muncul di Riwayat Import & bisa dihapus per batch. Fallback bila kolom belum ada (migrasi belum jalan).
+      try{await api('yanz_other_income',{method:'POST',body:JSON.stringify({...oiBody,import_batch_id:batchId||null,import_file:fileName||null})});}
+      catch(e){try{await api('yanz_other_income',{method:'POST',body:JSON.stringify(oiBody)});}catch(e2){console.warn('other_income gagal',oi.sku,e2.message);}}
     }
     return {short,otherCount:other.length};
   }
@@ -6570,13 +6575,16 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     await loadAll();renderImportBatches();
   }
 
-  // Reset: hapus SEMUA penjualan ecommerce + kembalikan stok (B2B aman, NSA-matched dilewati)
+  // Reset: hapus SEMUA penjualan ecommerce + Other Income hasil import (SKU tak dikenal) + kembalikan stok (B2B aman, NSA-matched dilewati)
   async function deleteAllEcommerceSales(){
     if(role!=='owner'){toast('❌ Hanya Owner');return;}
     let refs=[];
     try{const r=await api('yanz_sales_orders?channel=eq.ecommerce&select=reference');refs=[...new Set(r.map(x=>x.reference).filter(Boolean))];}catch(e){toast('❌ '+e.message);return;}
-    if(!refs.length){toast('Tidak ada penjualan ecommerce');return;}
-    if(!confirm('⚠️ HAPUS SEMUA '+refs.length+' Order ID penjualan ECOMMERCE?\n\n• Stok DIKEMBALIKAN (reverse FIFO)\n• B2B TIDAK tersentuh\n• Order yang sudah ter-match NSA DILEWATI\n• TIDAK BISA DI-UNDO\n\nLanjut?'))return;
+    // Other Income hasil import (SKU tak dikenal) juga bagian dari data import ecommerce → ikut direset.
+    let oiRows=[];
+    try{oiRows=await api('yanz_other_income?category=eq.'+encodeURIComponent(OI_CAT)+'&select=id');}catch(e){}
+    if(!refs.length&&!oiRows.length){toast('Tidak ada penjualan / import ecommerce untuk dihapus');return;}
+    if(!confirm('⚠️ HAPUS SEMUA data import ecommerce?\n\n• '+refs.length+' Order ID penjualan → stok DIKEMBALIKAN (reverse FIFO)\n• '+oiRows.length+' baris Other Income (SKU tak terdaftar)\n• B2B TIDAK tersentuh\n• Order yang sudah ter-match NSA DILEWATI\n• TIDAK BISA DI-UNDO\n\nLanjut?'))return;
     const st=document.getElementById('imp-status');
     let done=0,del=0,skipped=0;
     for(const ref of refs){
@@ -6593,8 +6601,11 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       }catch(e){console.error('hapus gagal',ref,e);}
       done++;if(st)st.innerHTML='🗑️ Menghapus… '+done+'/'+refs.length;
     }
-    toast('✓ '+del+' penjualan ecommerce dihapus & stok dikembalikan'+(skipped?', '+skipped+' dilewati (NSA)':''));
-    if(st)st.innerHTML='<span style="color:#16A34A">✓ Reset selesai: '+del+' dihapus'+(skipped?', '+skipped+' dilewati NSA':'')+'. Sekarang import Excel.</span>';
+    // Other Income import tak punya cash movement / stok (kas dari NSA) → cukup hapus barisnya.
+    let delOi=0;
+    for(const oi of oiRows){try{await api('yanz_other_income?id=eq.'+oi.id,{method:'DELETE'});delOi++;}catch(e){console.error('hapus OI gagal',oi.id,e);}}
+    toast('✓ '+del+' penjualan + '+delOi+' Other Income dihapus & stok dikembalikan'+(skipped?', '+skipped+' dilewati (NSA)':''));
+    if(st)st.innerHTML='<span style="color:#16A34A">✓ Reset selesai: '+del+' order + '+delOi+' Other Income dihapus'+(skipped?', '+skipped+' dilewati NSA':'')+'. Sekarang import Excel.</span>';
     await loadAll();renderImportBatches();
   }
 
@@ -6611,45 +6622,78 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     return 'deleted';
   }
 
-  // ── RIWAYAT IMPORT (hapus per batch, bukan hapus semua) ──
+  // Platform dari deskripsi Other Income import ("tiktok · SKU xxx") → label rapi.
+  function _oiPlatform(desc){
+    const first=String(desc||'').split('·')[0].trim().toLowerCase();
+    if(first==='tiktok')return 'TikTok';
+    if(first==='shopee')return 'Shopee';
+    return '—';
+  }
+
+  // ── RIWAYAT IMPORT (hapus per batch) — gabungan Penjualan (sales order) + Other Income (SKU tak dikenal) ──
   async function renderImportBatches(){
     const box=document.getElementById('imp-hist-list');if(!box)return;
-    let rows=[];
-    try{rows=await api('yanz_sales_orders?channel=eq.ecommerce&select=id,reference,order_date,total_revenue,customer_name,created_at,import_batch_id,import_file&order=created_at.desc&limit=5000');}
-    catch(e){box.innerHTML='<div style="font-size:12px;color:#DC2626">❌ '+e.message+'<br>Pastikan migrasi kolom <code>import_batch_id</code> & <code>import_file</code> sudah dijalankan di Supabase.</div>';return;}
-    if(!rows.length){box.innerHTML='<div style="font-size:12px;color:#888;padding:6px">Belum ada penjualan ecommerce.</div>';return;}
+    // 1) Sales order ecommerce. Coba dgn kolom batch; fallback tanpa kolom (migrasi belum jalan) supaya tak dead-end.
+    let soRows=[];
+    try{soRows=await api('yanz_sales_orders?channel=eq.ecommerce&select=id,reference,order_date,total_revenue,customer_name,created_at,import_batch_id,import_file&order=created_at.desc&limit=5000');}
+    catch(e){try{soRows=await api('yanz_sales_orders?channel=eq.ecommerce&select=id,reference,order_date,total_revenue,customer_name,created_at&order=created_at.desc&limit=5000');}catch(e2){box.innerHTML='<div style="font-size:12px;color:#DC2626">❌ '+e2.message+'</div>';return;}}
+    // 2) Other Income hasil import (SKU tak dikenal). Sama: coba dgn kolom batch, fallback tanpa.
+    let oiRows=[];
+    try{oiRows=await api('yanz_other_income?category=eq.'+encodeURIComponent(OI_CAT)+'&select=id,reference,income_date,amount,description,created_at,import_batch_id,import_file&order=created_at.desc&limit=5000');}
+    catch(e){try{oiRows=await api('yanz_other_income?category=eq.'+encodeURIComponent(OI_CAT)+'&select=id,reference,income_date,amount,description,created_at&order=created_at.desc&limit=5000');}catch(e2){oiRows=[];}}
+    if(!soRows.length&&!oiRows.length){box.innerHTML='<div style="font-size:12px;color:#888;padding:6px">Belum ada import ecommerce.</div>';return;}
     const groups=new Map();
-    for(const o of rows){
+    const gget=(key,plat)=>{if(!groups.has(key))groups.set(key,{key,file:null,platform:plat||'—',orders:0,oiCount:0,rev:0,oiRev:0,last:null,dmin:null,dmax:null});return groups.get(key);};
+    const bump=(g,t,d)=>{if(t&&(!g.last||t>g.last))g.last=t;if(d){if(!g.dmin||d<g.dmin)g.dmin=d;if(!g.dmax||d>g.dmax)g.dmax=d;}};
+    for(const o of soRows){
       const key=o.import_batch_id||('__legacy__::'+(o.customer_name||'?'));
-      if(!groups.has(key))groups.set(key,{key,file:o.import_file||null,platform:o.customer_name||'—',count:0,rev:0,last:o.created_at,dmin:o.order_date,dmax:o.order_date});
-      const g=groups.get(key);g.count++;g.rev+=num(o.total_revenue);
-      if(o.created_at>g.last)g.last=o.created_at;
-      if(o.order_date&&(!g.dmin||o.order_date<g.dmin))g.dmin=o.order_date;
-      if(o.order_date&&(!g.dmax||o.order_date>g.dmax))g.dmax=o.order_date;
+      const g=gget(key,o.customer_name||'—');
+      if(o.import_file&&!g.file)g.file=o.import_file;
+      g.orders++;g.rev+=num(o.total_revenue);bump(g,o.created_at,o.order_date);
     }
-    const arr=[...groups.values()].sort((a,b)=>String(b.last).localeCompare(String(a.last)));
+    for(const o of oiRows){
+      const plat=_oiPlatform(o.description);
+      const key=o.import_batch_id||('__legacyoi__::'+plat);
+      const g=gget(key,plat);
+      if(o.import_file&&!g.file)g.file=o.import_file;
+      g.oiCount++;g.oiRev+=num(o.amount);g.rev+=num(o.amount);bump(g,o.created_at,o.income_date);
+    }
+    const arr=[...groups.values()].sort((a,b)=>String(b.last||'').localeCompare(String(a.last||'')));
     let h='<div class="tw"><table><thead><tr><th>Waktu Import</th><th>File</th><th>Platform</th><th style="text-align:center">Order</th><th style="text-align:right">Revenue</th><th>Rentang tgl order</th><th></th></tr></thead><tbody>';
     for(const g of arr){
-      const legacy=g.key.indexOf('__legacy__::')===0;
-      const when=legacy?'—':new Date(g.last).toLocaleString('id-ID',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+      const legacy=g.key.indexOf('__legacy')===0;
+      const when=(legacy||!g.last)?'—':new Date(g.last).toLocaleString('id-ID',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
       const fileTxt=legacy?'<em style="color:#888">Import lama (sebelum fitur riwayat)</em>':(g.file?g.file:'(tanpa nama file)');
       const rentang=g.dmin?(g.dmin===g.dmax?fd(g.dmin):fd(g.dmin)+' – '+fd(g.dmax)):'—';
       const plat=g.platform==='TikTok'?'🎵 TikTok':g.platform==='Shopee'?'🛍️ Shopee':g.platform;
-      h+=`<tr><td style="font-size:12px;white-space:nowrap">${when}</td><td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis">${fileTxt}</td><td style="font-size:12px;white-space:nowrap">${plat}</td><td style="text-align:center">${g.count}</td><td style="text-align:right;white-space:nowrap">${rp(g.rev)}</td><td style="font-size:12px;white-space:nowrap">${rentang}</td><td><button class="btn btn-d btn-sm" onclick="inv.deleteImportBatch('${g.key.replace(/'/g,"")}')">🗑️ Hapus batch</button></td></tr>`;
+      const cntCell=g.orders+(g.oiCount?'<div style="font-size:10px;color:#D97706">+'+g.oiCount+' OI</div>':'');
+      const revCell=rp(g.rev)+(g.oiRev?'<div style="font-size:10px;color:#D97706">OI '+rp(g.oiRev)+'</div>':'');
+      h+=`<tr><td style="font-size:12px;white-space:nowrap">${when}</td><td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis">${fileTxt}</td><td style="font-size:12px;white-space:nowrap">${plat}</td><td style="text-align:center">${cntCell}</td><td style="text-align:right;white-space:nowrap">${revCell}</td><td style="font-size:12px;white-space:nowrap">${rentang}</td><td><button class="btn btn-d btn-sm" onclick="inv.deleteImportBatch('${g.key.replace(/'/g,"")}')">🗑️ Hapus batch</button></td></tr>`;
     }
     h+='</tbody></table></div>';
+    if(oiRows.length)h+='<p style="font-size:11px;color:#92400E;margin-top:8px;line-height:1.5">⚠️ <strong>OI</strong> = Other Income (SKU tak terdaftar): baris ini tercatat sebagai Other Income, bukan Penjualan, karena SKU-nya belum ada di master produk saat import. Agar tercatat sebagai <strong>Penjualan</strong>, petakan/daftarkan SKU dulu atau biarkan opsi <em>"Buat produk baru otomatis"</em> tetap tercentang saat import.</p>';
     box.innerHTML=h;
   }
 
   async function deleteImportBatch(key){
     if(role!=='owner'){toast('❌ Hanya Owner');return;}
-    let filter,label;
-    if(key.indexOf('__legacy__::')===0){const plat=key.slice('__legacy__::'.length);filter='import_batch_id=is.null&customer_name=eq.'+encodeURIComponent(plat);label='Import lama '+plat;}
-    else{filter='import_batch_id=eq.'+encodeURIComponent(key);label='batch ini';}
-    let orders=[];
-    try{orders=await api('yanz_sales_orders?channel=eq.ecommerce&'+filter+'&select=id,reference');}catch(e){toast('❌ '+e.message);return;}
-    if(!orders.length){toast('Batch kosong / sudah terhapus');renderImportBatches();return;}
-    if(!confirm('⚠️ Hapus '+orders.length+' order dari '+label+'?\n\n• Stok DIKEMBALIKAN (reverse FIFO)\n• Order yang sudah match NSA DILEWATI\n• B2B tak tersentuh\n• TIDAK BISA DI-UNDO\n\nLanjut?'))return;
+    const SO='yanz_sales_orders?channel=eq.ecommerce&';
+    const OI='yanz_other_income?category=eq.'+encodeURIComponent(OI_CAT)+'&';
+    const tryGet=async(...urls)=>{for(const u of urls){try{return await api(u);}catch(e){}}return [];};
+    let orders=[],ois=[],label;
+    if(key.indexOf('__legacyoi__::')===0){                 // Other Income lama (belum ada kolom batch), dikelompokkan per platform
+      const platRaw=key.slice('__legacyoi__::'.length),platLC=platRaw.toLowerCase();label='Import lama '+platRaw+' (Other Income)';
+      ois=await tryGet(OI+'import_batch_id=is.null&description=ilike.'+encodeURIComponent(platLC)+'*&select=id',OI+'description=ilike.'+encodeURIComponent(platLC)+'*&select=id');
+    }else if(key.indexOf('__legacy__::')===0){             // Sales order lama (belum ada kolom batch), per platform
+      const plat=key.slice('__legacy__::'.length);label='Import lama '+plat;
+      orders=await tryGet(SO+'import_batch_id=is.null&customer_name=eq.'+encodeURIComponent(plat)+'&select=id,reference',SO+'customer_name=eq.'+encodeURIComponent(plat)+'&select=id,reference');
+    }else{                                                  // Batch normal → hapus sales order + Other Income yg berbagi batch id
+      label='batch ini';
+      orders=await tryGet(SO+'import_batch_id=eq.'+encodeURIComponent(key)+'&select=id,reference');
+      ois=await tryGet(OI+'import_batch_id=eq.'+encodeURIComponent(key)+'&select=id');
+    }
+    if(!orders.length&&!ois.length){toast('Batch kosong / sudah terhapus');renderImportBatches();return;}
+    if(!confirm('⚠️ Hapus '+orders.length+' order + '+ois.length+' baris Other Income dari '+label+'?\n\n• Stok DIKEMBALIKAN (reverse FIFO)\n• Order yang sudah match NSA DILEWATI\n• B2B tak tersentuh\n• TIDAK BISA DI-UNDO\n\nLanjut?'))return;
     const st=document.getElementById('imp-status');
     let done=0,del=0,skipped=0;
     for(const o of orders){
@@ -6657,8 +6701,10 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       catch(e){console.error('hapus batch gagal',o.reference,e);}
       done++;if(st)st.innerHTML='🗑️ Menghapus… '+done+'/'+orders.length+(skipped?' ('+skipped+' dilewati NSA)':'');
     }
-    toast('✓ '+del+' order dihapus & stok dikembalikan'+(skipped?', '+skipped+' dilewati (NSA)':''));
-    if(st)st.innerHTML='<span style="color:#16A34A">✓ '+del+' order dihapus'+(skipped?', '+skipped+' dilewati NSA':'')+'.</span>';
+    let delOi=0;
+    for(const oi of ois){try{await api('yanz_other_income?id=eq.'+oi.id,{method:'DELETE'});delOi++;}catch(e){console.error('hapus OI gagal',oi.id,e);}}
+    toast('✓ '+del+' order + '+delOi+' Other Income dihapus & stok dikembalikan'+(skipped?', '+skipped+' dilewati (NSA)':''));
+    if(st)st.innerHTML='<span style="color:#16A34A">✓ '+del+' order + '+delOi+' Other Income dihapus'+(skipped?', '+skipped+' dilewati NSA':'')+'.</span>';
     await loadAll();renderImportBatches();
   }
 
@@ -6847,12 +6893,12 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     <div id="imp-preview"></div>
     <div class="card oo">
       <div class="chd" style="justify-content:space-between"><span><span class="dot dp"></span>📜 Riwayat Import — hapus per batch</span><button class="btn btn-s btn-sm" onclick="inv.renderImportBatches()">🔄 Muat ulang</button></div>
-      <p style="font-size:12px;color:#666;margin-bottom:12px;line-height:1.6">Tiap sesi Import Excel tercatat sebagai <strong>1 batch</strong>. Hapus per batch → <strong>stok dikembalikan</strong> (reverse FIFO, produk + packaging), order yang <strong>sudah match NSA dilewati</strong>, dan <strong>B2B tak tersentuh</strong>. Cocok kalau ada 1 import yang salah/kurang tanpa harus hapus semua.</p>
+      <p style="font-size:12px;color:#666;margin-bottom:12px;line-height:1.6">Tiap sesi Import Excel tercatat sebagai <strong>1 batch</strong> — termasuk baris <strong>Other Income</strong> (SKU tak terdaftar) dari import yang sama. Hapus per batch → <strong>stok dikembalikan</strong> (reverse FIFO, produk + packaging), order yang <strong>sudah match NSA dilewati</strong>, dan <strong>B2B tak tersentuh</strong>. Cocok kalau ada 1 import yang salah/kurang tanpa harus hapus semua.</p>
       <div id="imp-hist-list"><div style="font-size:12px;color:#888;padding:6px">Memuat…</div></div>
     </div>
     <div class="card oo" style="border-color:#FCA5A5;background:#FEF2F2">
       <div class="chd"><span class="dot" style="background:#DC2626"></span>Reset Total Penjualan Ecommerce</div>
-      <p style="font-size:12px;color:#991B1B;margin-bottom:12px;line-height:1.6">Hapus <strong>SEMUA</strong> penjualan ecommerce sekaligus &amp; kembalikan stok (semua batch). Pakai hanya kalau mau import ulang dari nol. <strong>B2B tidak tersentuh.</strong> Order yang sudah ter-match NSA dilewati.</p>
+      <p style="font-size:12px;color:#991B1B;margin-bottom:12px;line-height:1.6">Hapus <strong>SEMUA</strong> penjualan ecommerce sekaligus &amp; kembalikan stok (semua batch), <strong>termasuk Other Income (SKU tak terdaftar)</strong> hasil import. Pakai hanya kalau mau import ulang dari nol. <strong>B2B tidak tersentuh.</strong> Order yang sudah ter-match NSA dilewati.</p>
       <button class="btn btn-d" onclick="inv.deleteAllEcommerceSales()">🗑️ Hapus Semua Penjualan Ecommerce</button>
     </div>
   </div>
