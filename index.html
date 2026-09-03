@@ -6438,7 +6438,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
         });
         if(c.cat==='cod'){o.ready=c.ready;o._approve=!!c.ready;cod.push(o);}else auto.push(o);
       }
-      IMP={platform:impPlatform,fileName:file.name,auto,cod,skip,unknown};
+      IMP={platform:impPlatform,fileName:file.name,auto,cod,skip,unknown,autoCreate:false};
       renderImportPreview();
       if(st)st.innerHTML='<span style="color:#16A34A">✓ <strong>'+file.name+'</strong> diparse — '+orders.length+' Order ID. Review di bawah lalu Commit.</span>';
       ev.target.value=''; // izinkan pilih file yang sama lagi
@@ -6447,6 +6447,18 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
 
   function _prodOpts(sel){return '<option value="">— Catat sbg Other Income —</option>'+P.filter(p=>p.category==='product').map(p=>`<option value="${p.id}" ${p.id===sel?'selected':''}>[${p.sku}] ${p.name}</option>`).join('');}
   function remapSku(key,val){if(IMP&&IMP.unknown.has(key))IMP.unknown.get(key).mapTo=val;}
+  function setAutoCreate(v){if(IMP){IMP.autoCreate=!!v;renderImportPreview();}}
+  // Auto-buat produk untuk SKU tak dikenal (opsi import) → penjualan tercatat sbg Penjualan, bukan Other Income.
+  async function ensureProductForSku(sku,price){
+    const key=String(sku||'').trim().toUpperCase();if(!key)return null;
+    let p=P.find(x=>x.sku&&String(x.sku).toUpperCase()===key);
+    if(p)return p;
+    try{
+      const r=await api('yanz_products',{method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify({sku:String(sku).trim(),name:String(sku).trim(),category:'product',unit:'pcs',buffer_stock:0,selling_price:num(price)||0})});
+      const np=r&&r[0];if(np){P.push(np);return np;}
+    }catch(e){console.warn('auto-create produk gagal',sku,e.message);}
+    return null;
+  }
   function toggleCOD(i,checked){if(IMP&&IMP.cod[i]&&IMP.cod[i].ready)IMP.cod[i]._approve=checked;}
   function codAll(checked){if(!IMP)return;IMP.cod.forEach(o=>{if(o.ready)o._approve=checked;});renderImportPreview();}
 
@@ -6464,7 +6476,9 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       <div class="sc"><div class="slb">⚠️ SKU tak dikenal</div><div class="sv">${unknown.size}</div><div class="ss">petakan di bawah</div></div>
     </div>`;
     if(unknown.size){
-      h+='<div class="card" style="background:#FFFBEB;border-color:#FDE68A"><div class="sl2" style="margin-top:0">⚠️ SKU tidak terdaftar di YANZ</div><p style="font-size:12px;color:#92400E;margin-bottom:10px">Petakan ke produk yang benar (kalau salah ketik), atau biarkan tercatat sebagai <strong>Other Income</strong> (tanpa potong stok/kas).</p><div class="tw"><table><thead><tr><th>SKU Excel</th><th>Baris</th><th>Qty</th><th>Revenue</th><th>Petakan ke</th></tr></thead><tbody>';
+      h+='<div class="card" style="background:#FFFBEB;border-color:#FDE68A"><div class="sl2" style="margin-top:0">⚠️ SKU tidak terdaftar di YANZ</div><p style="font-size:12px;color:#92400E;margin-bottom:10px">Petakan ke produk yang benar (kalau salah ketik), atau biarkan tercatat sebagai <strong>Other Income</strong> (tanpa potong stok/kas).</p>';
+      h+=`<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:#92400E;margin-bottom:12px;cursor:pointer;font-weight:600;background:#fff;border:1px solid #FDE68A;border-radius:8px;padding:10px 12px"><input type="checkbox" ${IMP.autoCreate?'checked':''} onchange="inv.setAutoCreate(this.checked)" style="margin-top:2px"> <span>✅ Buat produk baru otomatis untuk SKU tak dikenal → catat sebagai <strong>Penjualan</strong> (bukan Other Income). Cocok untuk setup awal bisnis baru. <span style="font-weight:400">Catatan: COGS awal = 0 sampai kamu input harga beli (PO). SKU yang sudah kamu petakan manual di bawah tetap diutamakan.</span></span></label>`;
+      h+='<div class="tw"><table><thead><tr><th>SKU Excel</th><th>Baris</th><th>Qty</th><th>Revenue</th><th>Petakan ke</th></tr></thead><tbody>';
       for(const [key,u] of unknown){h+=`<tr><td><span class="bx bgr">${u.sku}</span></td><td>${u.count}</td><td>${u.qty}</td><td>${rp(u.rev)}</td><td><select onchange="inv.remapSku('${key.replace(/'/g,'')}',this.value)" style="max-width:260px">${_prodOpts(u.mapTo)}</select></td></tr>`;}
       h+='</tbody></table></div></div>';
     }
@@ -6490,7 +6504,11 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     const items=[],other=[];
     for(const l of o.lines){
       let prod=l.prod;
-      if(!prod){const u=IMP&&IMP.unknown.get(String(l.sku||'').toUpperCase());if(u&&u.mapTo)prod=P.find(p=>p.id===u.mapTo)||null;}
+      if(!prod){
+        const u=IMP&&IMP.unknown.get(String(l.sku||'').toUpperCase());
+        if(u&&u.mapTo)prod=P.find(p=>p.id===u.mapTo)||null;           // petakan manual diutamakan
+        else if(IMP&&IMP.autoCreate&&l.sku)prod=await ensureProductForSku(l.sku,l.qty>0?l.lineRev/l.qty:0); // opsi: buat produk baru
+      }
       if(prod)items.push({prodId:prod.id,qty:l.qty,unitPrice:l.qty>0?l.lineRev/l.qty:0,lineRev:l.lineRev});
       else other.push({sku:l.sku,amount:l.lineRev});
     }
@@ -6890,7 +6908,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
         setChannel,addOutItem,removeOutItem,addAddon,removeAddon,submitOut,
         setPOCat,filterPODropdown,onPPSelect,calcPO,submitPO,resetPO,onPOMethodChange,
         renderHist,
-        setImpPlatform,onImportFile,remapSku,toggleCOD,codAll,commitImport,deleteAllEcommerceSales,
+        setImpPlatform,onImportFile,remapSku,setAutoCreate,toggleCOD,codAll,commitImport,deleteAllEcommerceSales,
         renderImportBatches,deleteImportBatch
       };
       init();
@@ -11850,7 +11868,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
   const setText=(id,v)=>{const e=$(id);if(e)e.textContent=v;};
 
   const CAT_LABEL={equipment:'🖥️ Peralatan',vehicle:'🚚 Kendaraan',furniture:'🪑 Furniture',building:'🏠 Bangunan',other:'📦 Lainnya'};
-  let ASSETS=[];
+  let ASSETS=[],ACCOUNTS=[];
   const rootEl=()=>document.querySelector('.module-assets');
 
   function setDB(ok,msg){const d=$('fa-dbd');if(d)d.className='dbd'+(ok?' on':'');const t=$('fa-dbt');if(t)t.textContent=msg;}
@@ -11875,6 +11893,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     setDB(false,'Menghubungkan…');
     try{
       ASSETS=await api('yanz_fixed_assets?order=acquisition_date.desc');
+      try{ACCOUNTS=await api('yanz_cash_accounts?is_active=eq.true&order=display_order,account_name');}catch(e){ACCOUNTS=[];}
       setDB(true,`Terhubung ✓ — ${ASSETS.length} aset`);
       render();
     }catch(e){setDB(false,'❌ '+e.message);console.error(e);}
@@ -11928,6 +11947,14 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     $('fa-m-salvage').value=a?a.salvage_value:0;
     $('fa-m-life').value=a?((parseInt(a.useful_life_months)||60)/12):5;
     $('fa-m-notes').value=a?a.notes||'':'';
+    const accSel=$('fa-m-account');
+    if(accSel){
+      accSel.innerHTML='<option value="">— Tidak (kredit / aset lama sebelum pakai YANZ) —</option>'+ACCOUNTS.map(x=>`<option value="${x.id}">${x.account_name}</option>`).join('');
+      accSel.value=a?(a.paid_from_account_id||''):'';
+      accSel.disabled=!!a; // saat edit, kas tidak diutak-atik (kas hanya dicatat saat aset pertama dibuat)
+    }
+    const accHint=$('fa-m-account-hint');
+    if(accHint)accHint.textContent=a?'Kas hanya dicatat saat aset pertama dibuat — tidak berubah saat edit.':'Beli tunai/transfer sekarang → pilih akun, kas otomatis berkurang. Kosongkan kalau beli kredit atau aset lama sebelum pakai YANZ.';
     $('fa-modal').classList.add('show');
   }
   function closeModal(){$('fa-modal')?.classList.remove('show');}
@@ -11941,18 +11968,34 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     if(!name){toast('⚠️ Nama aset wajib');return;}
     if(cost<=0){toast('⚠️ Harga perolehan harus > 0');return;}
     if(lifeY<=0){toast('⚠️ Umur manfaat harus > 0');return;}
+    const acctId=$('fa-m-account')?$('fa-m-account').value:'';
+    const adate=$('fa-m-date').value;
     const body={
       name,category:$('fa-m-cat').value,
-      acquisition_date:$('fa-m-date').value,
+      acquisition_date:adate,
       acquisition_cost:cost,
       salvage_value:num($('fa-m-salvage').value),
       useful_life_months:Math.round(lifeY*12),
-      notes:$('fa-m-notes').value.trim()||null
+      notes:$('fa-m-notes').value.trim()||null,
+      paid_from_account_id:acctId||null
     };
+    // POST/PATCH defensif: kalau kolom paid_from_account_id belum ada (migrasi belum jalan),
+    // ulangi tanpa kolom itu — pencatatan aset & kas tetap jalan.
+    const send=(path,method,b)=>api(path,{method,headers:method==='POST'?{'Prefer':'return=representation'}:{},body:JSON.stringify(b)})
+      .catch(e=>{if(/paid_from_account_id/.test(e.message)){const {paid_from_account_id,...b2}=b;return api(path,{method,headers:method==='POST'?{'Prefer':'return=representation'}:{},body:JSON.stringify(b2)});}throw e;});
     try{
-      if(id)await api('yanz_fixed_assets?id=eq.'+id,{method:'PATCH',body:JSON.stringify(body)});
-      else await api('yanz_fixed_assets',{method:'POST',body:JSON.stringify(body)});
-      closeModal();await loadAll();toast('Aset tersimpan ✓');
+      if(id){
+        await send('yanz_fixed_assets?id=eq.'+id,'PATCH',body);
+      }else{
+        const r=await send('yanz_fixed_assets','POST',body);
+        const newId=r&&r[0]&&r[0].id;
+        // Beli aset tetap = KAS KELUAR (dikapitalisasi & disusutkan, bukan beban langsung).
+        // Hanya kalau akun dipilih; terhubung ke aset (source_id) supaya ikut terhapus saat aset dihapus.
+        if(acctId&&newId){
+          await api('yanz_cash_movements',{method:'POST',body:JSON.stringify({account_id:acctId,movement_date:adate||new Date().toISOString().split('T')[0],movement_type:'outflow',category:'fixed_asset_purchase',amount:cost,description:`Beli aset tetap: ${name}`,reference:'ASSET-'+String(newId).slice(0,8),source_type:'fixed_asset',source_id:newId})});
+        }
+      }
+      closeModal();await loadAll();toast('Aset tersimpan ✓'+(acctId&&!id?' · kas keluar tercatat':''));
     }catch(e){toast('❌ '+e.message);console.error(e);}
   }
 
@@ -11968,8 +12011,9 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
 
   async function del(id){
     const a=ASSETS.find(x=>x.id===id);if(!a)return;
-    if(!confirm(`Hapus aset "${a.name}" permanen? (Kalau cuma dijual/tidak dipakai, lebih baik pakai "Lepas".)`))return;
+    if(!confirm(`Hapus aset "${a.name}" permanen? (Kalau cuma dijual/tidak dipakai, lebih baik pakai "Lepas".)\n\nKas keluar terkait pembelian aset ini (kalau ada) ikut dihapus.`))return;
     try{
+      try{await api('yanz_cash_movements?source_type=eq.fixed_asset&source_id=eq.'+id,{method:'DELETE'});}catch(e){}
       await api('yanz_fixed_assets?id=eq.'+id,{method:'DELETE'});
       await loadAll();toast('Aset dihapus ✓');
     }catch(e){toast('❌ '+e.message);}
@@ -12026,6 +12070,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
           <div class="fld"><label>Nilai Residu (Rp)</label><input type="number" id="fa-m-salvage" min="0" value="0"><div class="hint">Perkiraan nilai jual di akhir umur (boleh 0)</div></div>
         </div>
         <div class="fld"><label>Umur Manfaat (tahun)</label><input type="number" id="fa-m-life" min="0" step="0.5" value="5"><div class="hint">Estimasi berapa lama aset dipakai. Peralatan ~4-5th, kendaraan ~8th, furniture ~4th.</div></div>
+        <div class="fld"><label>Bayar dari akun kas (opsional)</label><select id="fa-m-account"><option value="">— Tidak (kredit / aset lama sebelum pakai YANZ) —</option></select><div class="hint" id="fa-m-account-hint">Beli tunai/transfer sekarang → pilih akun, kas otomatis berkurang. Kosongkan kalau beli kredit atau aset lama sebelum pakai YANZ.</div></div>
         <div class="fld"><label>Catatan (opsional)</label><input id="fa-m-notes" placeholder="cth: serial number, lokasi"></div>
         <button class="btn btn-p" style="width:100%;justify-content:center;margin-top:6px" onclick="fa.save()">💾 Simpan Aset</button>
       </div>
