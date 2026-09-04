@@ -4602,6 +4602,24 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     const extra=qty-matchTier.qty_min;
     return matchTier.qty_usage+(extra>0?(extra*matchTier.usage_extra):0);
   }
+  // ── Polymailer otomatis per paket (grup Order ID) — lihat komentar detail di modul Inventory ──
+  let SHIP_MAILERS=[];
+  function packUnitsOf(pid){const p=PRODUCTS.find(x=>x.id===pid);const v=p?num(p.pack_units):0;return v>0?v:1;}
+  function shipLoad(items){return items.reduce((s,it)=>s+num(it.qty)*packUnitsOf(it.prodId),0);}
+  function pickMailers(load){
+    const ms=SHIP_MAILERS.filter(m=>m.pkgId&&num(m.cap)>0).slice().sort((a,b)=>num(a.cap)-num(b.cap));
+    if(!ms.length||load<=0)return [];
+    const fit=ms.find(m=>load<=num(m.cap));
+    if(fit)return [{pkgId:fit.pkgId,qty:1}];
+    const big=ms[ms.length-1];
+    return [{pkgId:big.pkgId,qty:Math.ceil(load/num(big.cap))}];
+  }
+  // Kelompokkan item Live per Order ID (paket) → mailer per paket. Return Map<orderRef, [{pkgId,qty}]>.
+  function liveShipGroups(items){
+    const g=new Map();
+    for(const it of items){const k=it.orderRef||'';if(!g.has(k))g.set(k,[]);g.get(k).push({prodId:it.prodId,qty:it.qty});}
+    const out=new Map();for(const [k,its] of g)out.set(k,pickMailers(shipLoad(its)));return out;
+  }
 
   async function loadAll(){
     _lastRefresh=Date.now();
@@ -4619,6 +4637,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
           api('yanz_bundle_components'),api('yanz_bom?order=created_at'),api('yanz_bom_tiers?order=qty_min')
         ]);
       }catch(e){BUNDLES=[];BOMS=[];BOM_TIERS=[];}
+      try{const sr=await api('yanz_finance_settings?setting_key=eq.polymailer_rules');const a=sr&&sr[0]?JSON.parse(sr[0].setting_value||'[]'):[];SHIP_MAILERS=Array.isArray(a)?a:[];}catch(e){SHIP_MAILERS=[];}
       resolveMeHost();
       setDB(true,'Terhubung ✓ — '+SESSIONS.length+' sesi · '+HOSTS.length+' host · '+PRODUCTS.filter(p=>p.category==='product').length+' produk');
       fillSelects();
@@ -5071,6 +5090,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
           customer_name:'Live Stream — '+getHostName(hostId),total_revenue:totRev
         })});
         const orderId=orderR[0].id;
+        const shipGroups=liveShipGroups(validItems);const shipDone=new Set(); // polymailer per Order ID (paket)
         for(const item of validItems){
           const revenue=num(item.qty)*num(item.sellPrice);
           const commission=revenue*COMMISSION_RATE;
@@ -5105,6 +5125,18 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
               order_id:orderId,packaging_id:bom.packaging_id,
               qty_used:usage,cogs_per_unit:usage>0?pkgCost/usage:0,cogs_total:pkgCost,source:'bom'
             })});
+          }
+          // Polymailer paket (grup Order ID) → dibebankan ke item PERTAMA tiap grup.
+          const _gk=item.orderRef||'';
+          if(!shipDone.has(_gk)){
+            shipDone.add(_gk);
+            for(const m of (shipGroups.get(_gk)||[])){
+              if(!m.pkgId||m.qty<=0)continue;
+              const {used,tot:mCost}=fifoDeduct(m.pkgId,m.qty);
+              const ded=used.reduce((s,u)=>s+u.take,0);
+              for(const u of used){const newR=u.b.qty_remaining-u.take;await api('yanz_purchase_batches?id=eq.'+u.b.id,{method:'PATCH',body:JSON.stringify({qty_remaining:newR})});const ix=BATCHES.findIndex(b=>b.id===u.b.id);if(ix>=0)BATCHES[ix].qty_remaining=newR;}
+              if(ded>0){await api('yanz_order_packaging',{method:'POST',body:JSON.stringify({order_id:orderId,packaging_id:m.pkgId,qty_used:ded,cogs_per_unit:ded>0?mCost/ded:0,cogs_total:mCost,source:'shipping'})});totalPkgCOGS+=mCost;}
+            }
           }
           const detectedPlatform=detectPlatformFromOrderId(item.orderRef);
           await api('yanz_order_items',{method:'POST',body:JSON.stringify({
@@ -5427,6 +5459,76 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     return matchTier.qty_usage+(extra>0?(extra*matchTier.usage_extra):0);
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  //  PACKAGING PENGIRIMAN (POLYMAILER) — otomatis per PAKET (1 Order ID)
+  //  Model "muatan/kapasitas": tiap produk punya muatan (pack_units; baju
+  //  tipis=1, tebal=2, dst). Tiap polymailer punya kapasitas (cap). Total
+  //  muatan paket = Σ(qty×muatan). Pilih mailer terkecil yang cukup; kalau
+  //  melebihi mailer terbesar → ceil(total÷cap terbesar) × mailer terbesar.
+  //  Konfigurasi disimpan di finance_settings key 'polymailer_rules' = JSON
+  //  [{pkgId,cap},…]. Biaya dibebankan ke item pertama paket (COGS laporan =
+  //  Σ order_items.cogs_total) & dicatat di order_packaging source 'shipping'.
+  // ══════════════════════════════════════════════════════════════════
+  let SHIP_MAILERS=[];
+  function packUnitsOf(pid){const p=P.find(x=>x.id===pid);const v=p?num(p.pack_units):0;return v>0?v:1;}
+  function shipLoad(items){return items.reduce((s,it)=>s+num(it.qty)*packUnitsOf(it.prodId),0);}
+  function pickMailers(load){
+    const ms=SHIP_MAILERS.filter(m=>m.pkgId&&num(m.cap)>0).slice().sort((a,b)=>num(a.cap)-num(b.cap));
+    if(!ms.length||load<=0)return [];
+    const fit=ms.find(m=>load<=num(m.cap));
+    if(fit)return [{pkgId:fit.pkgId,qty:1}];
+    const big=ms[ms.length-1];
+    return [{pkgId:big.pkgId,qty:Math.ceil(load/num(big.cap))}];
+  }
+  // Hitung mailer + biaya FIFO (tanpa mutasi B). items=[{prodId,qty}]. Return {list,cost,short}.
+  function calcShip(items){
+    const list=pickMailers(shipLoad(items));let cost=0,short=0;
+    for(const m of list){const f=fifoDeduct(m.pkgId,m.qty);cost+=f.tot;short+=f.short;}
+    return {list,cost,short};
+  }
+  // Deduksi FIFO polymailer + catat order_packaging (source 'shipping'). Mutasi B via patchBatch, insert lewat jobs. Return biaya.
+  function deductShip(orderId,itemId,list,jobs,patchBatch){
+    let cost=0;
+    for(const m of (list||[])){
+      if(!m.pkgId||m.qty<=0)continue;
+      const f=fifoDeduct(m.pkgId,m.qty);cost+=f.tot;
+      const deducted=f.used.reduce((s,u)=>s+u.take,0);
+      if(deducted>0){
+        jobs.push(api('yanz_order_packaging',{method:'POST',body:JSON.stringify({order_id:orderId,order_item_id:itemId||null,packaging_id:m.pkgId,qty_used:deducted,cogs_per_unit:deducted>0?f.tot/deducted:0,cogs_total:f.tot,source:'shipping'})}));
+        f.used.forEach(patchBatch);
+      }
+    }
+    return cost;
+  }
+
+  // ── UI: Konfigurasi polymailer (owner) ──
+  function _readShipRows(){return [...document.querySelectorAll('#ship-rules .ship-row')].map(r=>({pkgId:r.querySelector('.ship-pkg').value,cap:num(r.querySelector('.ship-cap').value)}));}
+  function renderShipConfig(arr){
+    const box=document.getElementById('ship-rules');if(!box)return;
+    const list=arr||SHIP_MAILERS.map(m=>({pkgId:m.pkgId,cap:m.cap}));
+    const opts=sel=>'<option value="">— pilih packaging —</option>'+P.filter(p=>p.category==='packaging').map(p=>`<option value="${p.id}" ${p.id===sel?'selected':''}>[${p.sku}] ${p.name}</option>`).join('');
+    if(!list.length){box.innerHTML='<div style="font-size:12px;color:#888;padding:6px 0">Belum ada polymailer. Klik "+ Tambah polymailer" lalu isi kapasitas.</div>';return;}
+    box.innerHTML='<div style="display:flex;gap:8px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px"><span style="flex:1;min-width:160px">Polymailer (packaging)</span><span style="width:120px">Kapasitas (muatan)</span><span style="width:34px"></span></div>'+
+      list.map((m,i)=>`<div class="ship-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <select class="ship-pkg" style="flex:1;min-width:160px;padding:8px;border:1.5px solid #E8E6E0;border-radius:7px;font-size:12px;font-family:inherit;background:#fff">${opts(m.pkgId)}</select>
+        <input class="ship-cap" type="number" min="0" step="0.1" value="${(m.cap==null||m.cap==='')?'':m.cap}" placeholder="mis. 4" style="width:120px;padding:8px;border:1.5px solid #E8E6E0;border-radius:7px;font-size:12px;font-family:inherit" />
+        <button class="btn btn-s btn-sm" style="width:34px" onclick="inv.removeShipRow(${i})" title="Hapus">✕</button>
+      </div>`).join('');
+  }
+  function addShipRow(){const a=_readShipRows();a.push({pkgId:'',cap:''});renderShipConfig(a);}
+  function removeShipRow(i){const a=_readShipRows();a.splice(i,1);renderShipConfig(a);}
+  async function saveShipConfig(){
+    if(role!=='owner'){toast('❌ Hanya Owner');return;}
+    const a=_readShipRows().filter(m=>m.pkgId&&num(m.cap)>0).map(m=>({pkgId:m.pkgId,cap:num(m.cap)})).sort((x,y)=>x.cap-y.cap);
+    try{
+      const ex=await api('yanz_finance_settings?setting_key=eq.polymailer_rules');
+      const val=JSON.stringify(a);
+      if(ex.length)await api('yanz_finance_settings?setting_key=eq.polymailer_rules',{method:'PATCH',body:JSON.stringify({setting_value:val})});
+      else await api('yanz_finance_settings',{method:'POST',body:JSON.stringify({setting_key:'polymailer_rules',setting_value:val})});
+      SHIP_MAILERS=a;renderShipConfig();toast('✓ Aturan polymailer disimpan ('+a.length+' tipe)');
+    }catch(e){toast('❌ '+e.message);}
+  }
+
   // ── LOAD ──
   async function loadAll(){
     _lastRefresh=Date.now();
@@ -5441,16 +5543,18 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       // (dulu: cash_accounts gagal untuk staff → BUNDLES ikut kosong → stok bundle 0).
       const _res=await Promise.allSettled([
         api('yanz_bom?order=created_at'),api('yanz_bom_tiers?order=qty_min'),api('yanz_bundle_components'),
-        api('yanz_cash_accounts?is_active=eq.true&order=display_order')
+        api('yanz_cash_accounts?is_active=eq.true&order=display_order'),
+        api('yanz_finance_settings?setting_key=eq.polymailer_rules')
       ]);
       BOMS=_res[0].status==='fulfilled'?_res[0].value:[];
       BOM_TIERS=_res[1].status==='fulfilled'?_res[1].value:[];
       BUNDLES=_res[2].status==='fulfilled'?_res[2].value:[];
       ACCOUNTS=_res[3].status==='fulfilled'?_res[3].value:[];
+      SHIP_MAILERS=(()=>{try{const r=_res[4];if(r.status==='fulfilled'&&r.value&&r.value[0]){const a=JSON.parse(r.value[0].setting_value||'[]');return Array.isArray(a)?a:[];}}catch(e){console.warn('polymailer_rules parse gagal',e.message);}return [];})();
       _res.forEach((r,i)=>{if(r.status==='rejected')console.warn('Inventory load gagal #'+i+':',r.reason?.message||r.reason);});
       setDB(true,'Terhubung ✓ — '+P.length+' produk');
       fillAllSelects();
-      renderStock();renderSKUTable();renderHist();renderOutForm();
+      renderStock();renderSKUTable();renderHist();renderOutForm();renderShipConfig();
       applyRole();
     }catch(e){setDB(false,'❌ '+e.message);console.error(e);}
   }
@@ -5652,7 +5756,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
   function openEM(id){
     const p=P.find(x=>x.id===id);if(!p)return;
     const set=(eid,val)=>{const e=document.getElementById(eid);if(e)e.value=val;};
-    set('eid',p.id);set('ec',p.sku);set('en',p.name);set('ecat',p.category);set('eu',p.unit);set('eb',p.buffer_stock);set('esp',p.selling_price||0);
+    set('eid',p.id);set('ec',p.sku);set('en',p.name);set('ecat',p.category);set('eu',p.unit);set('eb',p.buffer_stock);set('esp',p.selling_price||0);set('epu',(p.pack_units==null||p.pack_units==='')?1:p.pack_units);
     document.getElementById('em').style.display='flex';
   }
   function closeEM(){const e=document.getElementById('em');if(e)e.style.display='none';}
@@ -5681,6 +5785,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
   async function saveEM(){
     const id=document.getElementById('eid').value;
     const sellEl=document.getElementById('esp');
+    const puEl=document.getElementById('epu');
     const body={
       sku:document.getElementById('ec').value.trim().toUpperCase(),
       name:document.getElementById('en').value.trim(),
@@ -5689,8 +5794,11 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       buffer_stock:int(document.getElementById('eb').value),
       selling_price:sellEl?num(sellEl.value):0
     };
+    const pu=puEl?(num(puEl.value)||1):1;
     try{
-      await api('yanz_products?id=eq.'+id,{method:'PATCH',body:JSON.stringify(body)});
+      // Coba simpan dgn pack_units; fallback tanpa kolom bila migrasi belum jalan.
+      try{await api('yanz_products?id=eq.'+id,{method:'PATCH',body:JSON.stringify({...body,pack_units:pu})});body.pack_units=pu;}
+      catch(e){await api('yanz_products?id=eq.'+id,{method:'PATCH',body:JSON.stringify(body)});}
       const i=P.findIndex(p=>p.id===id);if(i>=0)P[i]={...P[i],...body};
       renderSKUTable();fillAllSelects();renderStock();closeEM();toast('SKU diperbarui ✓');
     }catch(e){toast('❌ '+e.message);}
@@ -6080,6 +6188,9 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
         }
       }
     }
+    // Polymailer paket (packaging pengiriman otomatis) — hitung & cek stok utk SELURUH paket ecommerce
+    const ship=isEco?calcShip(validItems):{list:[],cost:0,short:0};
+    for(const m of ship.list){const pkg=P.find(p=>p.id===m.pkgId);const avail=stockOf(m.pkgId);if(avail<m.qty){if(st){st.textContent=`❌ Polymailer "${pkg?.name||'?'}" tidak cukup — butuh ${m.qty} ${pkg?.unit||''}, tersedia ${avail.toFixed(2)}`;st.style.color='#DC2626';}return;}}
     // Cegah dobel: Order ID (ecommerce) yang sama sudah pernah diinput?
     if(isEco&&ref){
       try{
@@ -6098,11 +6209,14 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
         const pkgCost=isEco?calcItemPkgCost(item.prodId,item.qty):item.addons.reduce((s,a)=>s+(a.qty*fifoCostOf(a.pkgId)),0);
         totalCOGS+=tot+pkgCost;totalRev+=item.qty*item.sellPrice;
       });
+      totalCOGS+=ship.cost; // biaya polymailer paket
       const orderR=await api('yanz_sales_orders',{method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify({channel,order_date:date,reference:ref,customer_name:cust,total_cogs:totalCOGS,total_revenue:totalRev})});
       const orderId=orderR[0].id;
-      for(const item of validItems){
+      for(let idx=0;idx<validItems.length;idx++){
+        const item=validItems[idx],isFirst=idx===0;
         const {used,tot:prodCost,avg}=resolveOut(item.prodId,item.qty);
-        const pkgCost=isEco?calcItemPkgCost(item.prodId,item.qty):item.addons.reduce((s,a)=>s+(a.qty*fifoCostOf(a.pkgId)),0);
+        let pkgCost=isEco?calcItemPkgCost(item.prodId,item.qty):item.addons.reduce((s,a)=>s+(a.qty*fifoCostOf(a.pkgId)),0);
+        if(isFirst)pkgCost+=ship.cost; // polymailer paket dibebankan ke item pertama → ikut COGS laporan
         // order_item wajib duluan (butuh itemId untuk order_packaging)
         const itemR=await api('yanz_order_items',{method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify({order_id:orderId,product_id:item.prodId,qty:item.qty,sell_price:item.sellPrice,cogs_product:prodCost,cogs_packaging:pkgCost,cogs_total:prodCost+pkgCost,order_ref:ref||null,nsa_status:isEco?'pending':null})});
         const itemId=itemR[0].id;
@@ -6123,6 +6237,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
             jobs.push(api('yanz_alerts',{method:'POST',body:JSON.stringify({type:'stock',severity:stockOf(pkg.pkgId)===0?'high':'medium',message:`${prod.name} — stok ${stockOf(pkg.pkgId).toFixed(2)} ${prod.unit} (buffer: ${prod.buffer_stock})`})}).catch(()=>{}));
           }
         }
+        if(isFirst&&isEco&&ship.list.length)deductShip(orderId,itemId,ship.list,jobs,patchBatch); // polymailer seluruh paket
         await Promise.all(jobs); // semua tulisan item ini paralel (batch distinct → aman)
       }
       // activity = log, tidak perlu ditunggu (fire-and-forget)
@@ -6477,6 +6592,14 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       <div class="sc"><div class="slb">⏭️ Dilewati</div><div class="sv">${skip.length}</div><div class="ss">dobel / batal / retur</div></div>
       <div class="sc"><div class="slb">⚠️ SKU tak dikenal</div><div class="sv">${unknown.size}</div><div class="ss">petakan di bawah</div></div>
     </div>`;
+    // Estimasi polymailer (packaging pengiriman) utk order yang akan dicommit
+    if(SHIP_MAILERS.length){
+      const shipOrders=[...auto,...codReady.filter(o=>o._approve)];
+      const cnt={};
+      for(const o of shipOrders){const its=(o.lines||[]).map(l=>({prodId:(l.prod&&l.prod.id)||null,qty:l.qty}));for(const m of pickMailers(shipLoad(its))){cnt[m.pkgId]=(cnt[m.pkgId]||0)+num(m.qty);}}
+      const parts=Object.entries(cnt).map(([pid,q])=>{const p=P.find(x=>x.id===pid);return `<strong>${q}</strong> × ${p?('['+p.sku+'] '+p.name):'?'}`;});
+      h+=`<div class="card" style="background:#F5F7FF;border-color:#C7D2FE"><div class="sl2" style="margin-top:0">📦 Estimasi polymailer</div><div style="font-size:12px;color:#3730A3">${parts.length?parts.join(' · '):'Tidak ada — cek muatan produk &amp; kapasitas polymailer di Costing / BOM.'}</div><div style="font-size:11px;color:#888;margin-top:5px">Dihitung per Order ID dari muatan/ketebalan tiap produk. SKU tak dikenal dianggap muatan 1 sampai diubah di Kelola SKU.</div></div>`;
+    }
     if(unknown.size){
       h+='<div class="card" style="background:#FFFBEB;border-color:#FDE68A"><div class="sl2" style="margin-top:0">⚠️ SKU tidak terdaftar di YANZ</div><p style="font-size:12px;color:#92400E;margin-bottom:10px">Petakan ke produk yang benar (kalau salah ketik), atau biarkan tercatat sebagai <strong>Other Income</strong> (tanpa potong stok/kas).</p>';
       h+=`<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:#92400E;margin-bottom:12px;cursor:pointer;font-weight:600;background:#fff;border:1px solid #FDE68A;border-radius:8px;padding:10px 12px"><input type="checkbox" ${IMP.autoCreate?'checked':''} onchange="inv.setAutoCreate(this.checked)" style="margin-top:2px"> <span>✅ Buat produk baru otomatis untuk SKU tak dikenal → catat sebagai <strong>Penjualan</strong> (bukan Other Income). Cocok untuk setup awal bisnis baru. <span style="font-weight:400">Catatan: COGS awal = 0 sampai kamu input harga beli (PO). SKU yang sudah kamu petakan manual di bawah tetap diutamakan.</span></span></label>`;
@@ -6516,6 +6639,8 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     }
     let totalCOGS=0,totalRev=0,short=0;
     items.forEach(it=>{const r=resolveOut(it.prodId,it.qty);const pkg=calcItemPkgCost(it.prodId,it.qty);totalCOGS+=r.tot+pkg;totalRev+=it.lineRev;if(r.short>0)short+=r.short;});
+    // Polymailer paket (1 Order ID = 1 paket): dihitung dari total muatan semua item, biaya dibebankan ke item pertama.
+    const ship=calcShip(items);totalCOGS+=ship.cost;
     const odate=o.date||new Date().toISOString().split('T')[0];
     if(items.length){
       const baseBody={channel:'ecommerce',order_date:odate,reference:o.orderId,customer_name:o.platform==='tiktok'?'TikTok':'Shopee',total_cogs:totalCOGS,total_revenue:totalRev};
@@ -6524,9 +6649,11 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       try{orderR=await api('yanz_sales_orders',{method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify({...baseBody,import_batch_id:batchId||null,import_file:fileName||null})});}
       catch(e){orderR=await api('yanz_sales_orders',{method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify(baseBody)});}
       const orderId=orderR[0].id;
-      for(const it of items){
+      for(let idx=0;idx<items.length;idx++){
+        const it=items[idx],isFirst=idx===0;
         const {used,tot:prodCost,avg}=resolveOut(it.prodId,it.qty);
-        const pkgCost=calcItemPkgCost(it.prodId,it.qty);
+        let pkgCost=calcItemPkgCost(it.prodId,it.qty);
+        if(isFirst)pkgCost+=ship.cost; // biaya polymailer paket dibebankan ke item pertama → ikut COGS laporan (Σ order_items.cogs_total)
         const itemR=await api('yanz_order_items',{method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify({order_id:orderId,product_id:it.prodId,qty:it.qty,sell_price:it.unitPrice,cogs_product:prodCost,cogs_packaging:pkgCost,cogs_total:prodCost+pkgCost,order_ref:o.orderId,nsa_status:'pending'})});
         const itemId=itemR[0].id;
         const jobs=[];
@@ -6540,6 +6667,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
           jobs.push(api('yanz_order_packaging',{method:'POST',body:JSON.stringify({order_id:orderId,order_item_id:itemId,packaging_id:pkg.pkgId,qty_used:pkg.qty,cogs_per_unit:fifoCostOf(pkg.pkgId),cogs_total:pkgFifo.tot,source:'bom'})}));
           pkgFifo.used.forEach(patchBatch);
         }
+        if(isFirst&&ship.list.length)deductShip(orderId,itemId,ship.list,jobs,patchBatch); // polymailer seluruh paket
         await Promise.all(jobs);
       }
     }
@@ -6810,6 +6938,12 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       <div class="sl2">Formula Packaging untuk Produk Ini</div>
       <div id="bom-items"></div>
     </div>
+    <div class="card" style="border-color:#C7D2FE;background:#F5F7FF">
+      <div class="chd" style="justify-content:space-between"><span><span class="dot db"></span>📦 Packaging Pengiriman (Polymailer) — otomatis per paket</span><button class="btn btn-s btn-sm" onclick="inv.renderShipConfig()">🔄 Muat ulang</button></div>
+      <p style="font-size:12px;color:#666;margin-bottom:12px;line-height:1.6">Polymailer dihitung <strong>per 1 Order ID (paket)</strong>, bukan per SKU. Daftarkan tiap tipe polymailer + <strong>kapasitas</strong>-nya (berapa "muatan" yang muat). Sistem menjumlahkan muatan semua baju dalam paket (atur <em>Muatan/ketebalan</em> di tiap produk via Kelola SKU → Edit), lalu memilih polymailer terkecil yang cukup; kalau melebihi yang terbesar → otomatis <strong>ditambah</strong> (mis. 5 baju → 2 polymailer besar). Berlaku saat Import Excel, Keluarkan Stok (ecommerce), &amp; Live.<br><strong>Penting:</strong> daftarkan polymailer sebagai kategori <strong>packaging</strong> + input PO-nya (agar stok &amp; COGS benar). Jangan taruh polymailer ini di BOM per-produk supaya tidak dobel potong.</p>
+      <div id="ship-rules"><div style="font-size:12px;color:#888;padding:6px 0">Memuat…</div></div>
+      <div class="brow" style="margin-top:10px"><button class="btn btn-s btn-sm" onclick="inv.addShipRow()">+ Tambah polymailer</button><button class="btn btn-p btn-sm" onclick="inv.saveShipConfig()">💾 Simpan aturan</button></div>
+    </div>
   </div>
   <div class="panel" id="panel-out">
     <div class="ch-tabs">
@@ -6908,6 +7042,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       <div class="fg2" style="gap:12px"><div class="fld"><label>Kode SKU</label><input id="ec" /></div><div class="fld"><label>Nama</label><input id="en" /></div></div>
       <div class="fg3" style="margin-top:12px;gap:12px"><div class="fld"><label>Kategori</label><select id="ecat"><option value="product">Produk</option><option value="packaging">Packaging</option></select></div><div class="fld"><label>Satuan</label><input id="eu" /></div><div class="fld"><label>Buffer Stock</label><input id="eb" type="number" /></div></div>
       <div class="fld" style="margin-top:12px"><label>Harga Jual Default (Rp)</label><input id="esp" type="number" min="0" placeholder="75000" /></div>
+      <div class="fld" style="margin-top:12px"><label>Muatan / ketebalan <span style="font-weight:400;color:#888">(untuk polymailer otomatis)</span></label><input id="epu" type="number" min="0" step="0.1" placeholder="1" /><span class="hint">Berapa "slot" 1 pcs makan di polymailer. Baju tipis = 1, tebal = 2, dst. Kosong = 1. (Hanya relevan utk produk.)</span></div>
       <input type="hidden" id="eid" />
       <div class="brow"><button class="btn btn-p" onclick="inv.saveEM()">Simpan</button><button class="btn btn-s" onclick="inv.closeEM()">Batal</button></div>
     </div>
@@ -6955,7 +7090,8 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
         setPOCat,filterPODropdown,onPPSelect,calcPO,submitPO,resetPO,onPOMethodChange,
         renderHist,
         setImpPlatform,onImportFile,remapSku,setAutoCreate,toggleCOD,codAll,commitImport,deleteAllEcommerceSales,
-        renderImportBatches,deleteImportBatch
+        renderImportBatches,deleteImportBatch,
+        renderShipConfig,addShipRow,removeShipRow,saveShipConfig
       };
       init();
     },
