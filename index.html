@@ -6733,16 +6733,24 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
         for(const it of items){const prod=P.find(p=>p.id===it.product_id);if(prod&&prod.is_bundle){for(const c of BUNDLES.filter(b=>b.bundle_id===it.product_id))await restoreToBatches(c.component_id,num(it.qty)*num(c.qty_per_bundle));}else{await restoreToBatches(it.product_id,num(it.qty));}}
         for(const o of orders){let pkgs=[];try{pkgs=await api('yanz_order_packaging?order_id=eq.'+o.id+'&select=packaging_id,qty_used');}catch(e){}for(const pk of pkgs)await restoreToBatches(pk.packaging_id,num(pk.qty_used));}
         try{await api('yanz_stock_movements?reference=eq.'+encodeURIComponent(ref),{method:'DELETE'});}catch(e){}
-        for(const o of orders)await api('yanz_sales_orders?id=eq.'+o.id,{method:'DELETE'});
+        for(const o of orders){
+          try{await api('yanz_order_packaging?order_id=eq.'+o.id,{method:'DELETE'});}catch(e){}
+          try{await api('yanz_order_items?order_id=eq.'+o.id,{method:'DELETE'});}catch(e){}   // WAJIB: kalau tidak, order_items yatim & Gross NSA tetap membengkak
+          await api('yanz_sales_orders?id=eq.'+o.id,{method:'DELETE'});
+        }
         del++;
       }catch(e){console.error('hapus gagal',ref,e);}
       done++;if(st)st.innerHTML='🗑️ Menghapus… '+done+'/'+refs.length;
     }
+    // Sapu order_items ecommerce/Live YATIM (parent order sudah terhapus di siklus lama, tak ter-reverse) → cegah Gross NSA & Income Statement tetap dobel.
+    // Hanya 'pending' (yang 'matched'/settled tetap aman). Stok sudah dikembalikan saat delete sebelumnya, jadi cukup hapus barisnya.
+    let orphan=0;
+    try{const orp=await api('yanz_order_items?nsa_status=eq.pending&select=id');orphan=orp.length;if(orphan){for(const it of orp){try{await api('yanz_order_packaging?order_item_id=eq.'+it.id,{method:'DELETE'});}catch(e){}}await api('yanz_order_items?nsa_status=eq.pending',{method:'DELETE'});}}catch(e){console.warn('sapu orphan gagal',e.message);}
     // Other Income import tak punya cash movement / stok (kas dari NSA) → cukup hapus barisnya.
     let delOi=0;
     for(const oi of oiRows){try{await api('yanz_other_income?id=eq.'+oi.id,{method:'DELETE'});delOi++;}catch(e){console.error('hapus OI gagal',oi.id,e);}}
-    toast('✓ '+del+' penjualan + '+delOi+' Other Income dihapus & stok dikembalikan'+(skipped?', '+skipped+' dilewati (NSA)':''));
-    if(st)st.innerHTML='<span style="color:#16A34A">✓ Reset selesai: '+del+' order + '+delOi+' Other Income dihapus'+(skipped?', '+skipped+' dilewati NSA':'')+'. Sekarang import Excel.</span>';
+    toast('✓ '+del+' penjualan + '+delOi+' Other Income dihapus & stok dikembalikan'+(orphan?' + '+orphan+' item yatim disapu':'')+(skipped?', '+skipped+' dilewati (NSA)':''));
+    if(st)st.innerHTML='<span style="color:#16A34A">✓ Reset selesai: '+del+' order + '+delOi+' Other Income'+(orphan?' + '+orphan+' item yatim':'')+' dihapus'+(skipped?', '+skipped+' dilewati NSA':'')+'. Sekarang import Excel.</span>';
     await loadAll();renderImportBatches();
   }
 
@@ -6755,6 +6763,8 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     let pkgs=[];try{pkgs=await api('yanz_order_packaging?order_id=eq.'+o.id+'&select=packaging_id,qty_used');}catch(e){}
     for(const pk of pkgs)await restoreToBatches(pk.packaging_id,num(pk.qty_used));
     if(o.reference){try{await api('yanz_stock_movements?reference=eq.'+encodeURIComponent(o.reference),{method:'DELETE'});}catch(e){}}
+    try{await api('yanz_order_packaging?order_id=eq.'+o.id,{method:'DELETE'});}catch(e){}
+    try{await api('yanz_order_items?order_id=eq.'+o.id,{method:'DELETE'});}catch(e){}   // WAJIB: cegah order_items yatim
     await api('yanz_sales_orders?id=eq.'+o.id,{method:'DELETE'});
     return 'deleted';
   }
