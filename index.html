@@ -6626,6 +6626,15 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
   }
 
   async function recordOrder(o,batchId,fileName){
+    // Idempoten: kalau Order ID sudah tercatat (Penjualan ecommerce ATAU Other Income import) → LEWATI.
+    // Cegah penjualan DOBEL saat file yang sama di-import >1× — cek langsung ke DB saat commit
+    // (snapshot anti-dobel saat parse bisa gagal diam-diam / kadaluarsa, sehingga dobel lolos).
+    try{
+      const dupSO=await api('yanz_sales_orders?channel=eq.ecommerce&reference=eq.'+encodeURIComponent(o.orderId)+'&select=id&limit=1');
+      if(dupSO.length)return {short:0,otherCount:0,skipped:true};
+      const dupOI=await api('yanz_other_income?category=eq.'+encodeURIComponent(OI_CAT)+'&reference=eq.'+encodeURIComponent(o.orderId)+'&select=id&limit=1');
+      if(dupOI.length)return {short:0,otherCount:0,skipped:true};
+    }catch(e){/* kalau cek gagal, lanjut supaya tak menghalangi import yang sah */}
     const items=[],other=[];
     for(const l of o.lines){
       let prod=l.prod;
@@ -6690,14 +6699,14 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     // ID batch unik untuk sesi import ini → tercatat di tiap order supaya bisa dihapus per batch di Riwayat Import.
     const batchId='imp_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,7);
     const fileName=IMP.fileName||'';
-    let done=0,shortTot=0,otherTot=0,fail=0;
+    let done=0,shortTot=0,otherTot=0,fail=0,skipTot=0;
     for(const o of orders){
-      try{const r=await recordOrder(o,batchId,fileName);shortTot+=r.short;otherTot+=r.otherCount;}
+      try{const r=await recordOrder(o,batchId,fileName);shortTot+=r.short;otherTot+=r.otherCount;if(r.skipped)skipTot++;}
       catch(e){fail++;console.error('Import order gagal',o.orderId,e);}
       done++;if(st)st.textContent='Menyimpan… '+done+'/'+orders.length;
     }
     try{M=await api('yanz_stock_movements?order=created_at.desc&limit=100');}catch(e){}
-    toast('✓ Import selesai: '+(done-fail)+' order tercatat'+(fail?', '+fail+' gagal':'')+(otherTot?', '+otherTot+' SKU→Other Income':'')+(shortTot?', ⚠️ '+shortTot.toFixed(1)+' unit stok kurang':''));
+    toast('✓ Import selesai: '+(done-fail-skipTot)+' order baru'+(skipTot?', '+skipTot+' dilewati (Order ID sudah ada)':'')+(fail?', '+fail+' gagal':'')+(otherTot?', '+otherTot+' SKU→Other Income':'')+(shortTot?', ⚠️ '+shortTot.toFixed(1)+' unit stok kurang':''));
     IMP=null;
     const box=document.getElementById('imp-preview');if(box)box.innerHTML='<div style="color:#16A34A;padding:10px">✓ Import selesai. Upload file berikutnya atau buka tab Stok untuk cek hasil.</div>';
     await loadAll();renderImportBatches();
