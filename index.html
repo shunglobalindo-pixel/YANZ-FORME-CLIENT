@@ -6210,7 +6210,9 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
         totalCOGS+=tot+pkgCost;totalRev+=item.qty*item.sellPrice;
       });
       totalCOGS+=ship.cost; // biaya polymailer paket
-      const orderR=await api('yanz_sales_orders',{method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify({channel,order_date:date,reference:ref,customer_name:cust,total_cogs:totalCOGS,total_revenue:totalRev})});
+      const orderBody={channel,order_date:date,reference:ref,customer_name:cust,total_cogs:totalCOGS,total_revenue:totalRev};
+      if(!isEco){orderBody.workflow_status='paid';orderBody.subtotal=totalRev;} // B2B via Keluarkan Stok = penjualan selesai → tandai lunas + subtotal supaya masuk Income Statement & laporan lain
+      const orderR=await api('yanz_sales_orders',{method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify(orderBody)});
       const orderId=orderR[0].id;
       for(let idx=0;idx<validItems.length;idx++){
         const item=validItems[idx],isFirst=idx===0;
@@ -9329,8 +9331,8 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     const shSessionIds=shSessions.map(s=>s.id);
     const shItems=ORDER_ITEMS.filter(i=>shSessionIds.includes(i.livestream_session_id)||(isImportItem(i)&&importPlat(i)==='shopee'));
     const penjualanShopee=shItems.reduce((s,i)=>s+num(i.qty)*num(i.sell_price),0);
-    const b2bOrders=SALES_ORDERS.filter(o=>o.channel==='b2b'&&inRange(o.order_date)&&['sent','partial_paid','paid'].includes(o.workflow_status));
-    const penjualanB2B=b2bOrders.reduce((s,o)=>s+num(o.subtotal),0);
+    const b2bOrders=SALES_ORDERS.filter(o=>o.channel==='b2b'&&inRange(o.order_date)&&(!o.workflow_status||['sent','partial_paid','paid'].includes(o.workflow_status)));
+    const penjualanB2B=b2bOrders.reduce((s,o)=>s+num(o.subtotal||o.total_revenue),0);
     const totalPenjualan=penjualanTT+penjualanShopee+penjualanB2B;
     let cogs=0;
     [...ttItems,...shItems].forEach(i=>{cogs+=num(i.cogs_total);});
@@ -9384,8 +9386,8 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     const importItems=ORDER_ITEMS.filter(i=>!i.livestream_session_id&&SALES_ORDERS.some(o=>o.id===i.order_id&&o.channel==='ecommerce'&&inRange(o.order_date)));
     const liveRev=[...liveItems,...importItems].reduce((s,i)=>s+num(i.qty)*num(i.sell_price),0);
     const liveCOGS=[...liveItems,...importItems].reduce((s,i)=>s+num(i.cogs_total),0);
-    const b2bOrders=SALES_ORDERS.filter(o=>o.channel==='b2b'&&inRange(o.order_date)&&['sent','partial_paid','paid'].includes(o.workflow_status));
-    const b2bRev=b2bOrders.reduce((s,o)=>s+num(o.subtotal),0);
+    const b2bOrders=SALES_ORDERS.filter(o=>o.channel==='b2b'&&inRange(o.order_date)&&(!o.workflow_status||['sent','partial_paid','paid'].includes(o.workflow_status)));
+    const b2bRev=b2bOrders.reduce((s,o)=>s+num(o.subtotal||o.total_revenue),0);
     const b2bOrderIds=b2bOrders.map(o=>o.id);
     const b2bCOGS=ORDER_ITEMS.filter(i=>b2bOrderIds.includes(i.order_id)).reduce((s,i)=>s+num(i.cogs_total),0);
     const totalRev=liveRev+b2bRev;
@@ -9557,7 +9559,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     const map=new Map();
     SALES_ORDERS.forEach(o=>{
       const st=(o.workflow_status||'').toLowerCase();
-      if(o.channel==='b2b'&&!['sent','partial_paid','paid'].includes(st))return;
+      if(o.channel==='b2b'&&st!==''&&!['sent','partial_paid','paid'].includes(st))return; // st==='' = penjualan B2B cepat (Keluarkan Stok) → tetap dihitung
       if(st==='cancelled')return;
       if(!o.order_date)return;
       map.set(o.id,o.order_date);
@@ -10147,8 +10149,8 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     const shItems=ORDER_ITEMS.filter(i=>shIds.includes(i.livestream_session_id)||(isImportItem(i)&&importPlat(i)==='shopee'));
     const ttRev=ttItems.reduce((s,i)=>s+num(i.qty)*num(i.sell_price),0);
     const shRev=shItems.reduce((s,i)=>s+num(i.qty)*num(i.sell_price),0);
-    const b2bOrders=SALES_ORDERS.filter(o=>o.channel==='b2b'&&inRange(o.order_date)&&['sent','partial_paid','paid'].includes(o.workflow_status));
-    const b2bRev=b2bOrders.reduce((s,o)=>s+num(o.subtotal),0);
+    const b2bOrders=SALES_ORDERS.filter(o=>o.channel==='b2b'&&inRange(o.order_date)&&(!o.workflow_status||['sent','partial_paid','paid'].includes(o.workflow_status)));
+    const b2bRev=b2bOrders.reduce((s,o)=>s+num(o.subtotal||o.total_revenue),0);
     const totalRev=ttRev+shRev+b2bRev;
     const liveCOGS=[...ttItems,...shItems].reduce((s,i)=>s+num(i.cogs_total),0);
     const b2bIds=b2bOrders.map(o=>o.id);
