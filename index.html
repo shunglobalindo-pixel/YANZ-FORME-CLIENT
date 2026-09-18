@@ -6007,9 +6007,14 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
         let pkgs=[];try{pkgs=await api('yanz_order_packaging?order_id=eq.'+o.id+'&select=packaging_id,qty_used');}catch(e){}
         for(const pk of pkgs)await restoreToBatches(pk.packaging_id,num(pk.qty_used));
       }
-      // 3. Hapus pergerakan stok (by reference) + order (cascade ke items + packaging)
+      // 3. Hapus pergerakan stok (by reference) + order_packaging + order_items + order.
+      //    order_items WAJIB dihapus eksplisit (tak ada cascade di DB) — kalau tidak, item yatim & Gross NSA/Income Statement tetap terhitung.
       try{await api('yanz_stock_movements?reference=eq.'+encodeURIComponent(ref),{method:'DELETE'});}catch(e){}
-      for(const o of orders)await api('yanz_sales_orders?id=eq.'+o.id,{method:'DELETE'});
+      for(const o of orders){
+        try{await api('yanz_order_packaging?order_id=eq.'+o.id,{method:'DELETE'});}catch(e){}
+        try{await api('yanz_order_items?order_id=eq.'+o.id,{method:'DELETE'});}catch(e){}
+        await api('yanz_sales_orders?id=eq.'+o.id,{method:'DELETE'});
+      }
       toast('✓ Penjualan "'+ref+'" dihapus & stok dikembalikan');
       await loadAll();
     }catch(e){toast('❌ '+e.message);console.error(e);}
