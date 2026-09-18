@@ -9630,7 +9630,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
         <div id="period-year" class="period-input" style="display:none"><select id="sel-year-y"></select></div>
         <div id="period-custom" class="period-input" style="display:none"><input type="date" id="custom-from" /><span>s/d</span><input type="date" id="custom-to" /></div>
         <button class="btn btn-p btn-sm" onclick="is.renderStatement()">Generate</button>
-        <button class="btn btn-s btn-sm" onclick="window.print()">🖨️ Print / Save PDF</button>
+        <button class="btn btn-s btn-sm no-print" onclick="is.printStatement()">🖨️ Print / Save PDF</button>
       </div>
     </div>
     <div class="summary-cards" id="summary-cards"></div>
@@ -9660,6 +9660,32 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     _focusHandler=()=>{}; // auto-refresh saat fokus DIMATIKAN — cegah input yang belum disimpan hilang saat pindah tab. Pakai tombol 🔄 Refresh manual.
     window.addEventListener('focus',_focusHandler);
   }
+  // Cetak Income Statement sebagai DOKUMEN bersih (bukan screenshot seluruh app).
+  // Buka jendela baru berisi HANYA laporan + CSS app, lalu print → bisa Save as PDF.
+  function printStatement(){
+    const cont=document.getElementById('is-content');
+    if(!cont||!cont.innerHTML.trim()||cont.querySelector('.loading,.empty')){toast('Klik Generate dulu sebelum cetak/PDF');return;}
+    const sc=document.getElementById('summary-cards');
+    const css=[...document.querySelectorAll('style')].map(s=>s.textContent).join('\n');
+    const title=(BIZ.business_name||BIZ.legal_name||'YANZ')+' — Income Statement';
+    const w=window.open('','_blank');
+    if(!w){toast('⚠️ Popup diblokir — izinkan popup untuk cetak/PDF');return;}
+    const extra='@page{size:A4;margin:14mm}'
+      +'html,body{background:#fff!important;margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+      +'.module-is .panel{display:block!important;max-width:100%!important;margin:0!important;padding:0!important}'
+      +'.module-is .summary-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}'
+      +'.is-print-wrap{max-width:900px;margin:0 auto}'
+      +'.no-print,button{display:none!important}';
+    w.document.write('<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>'+title+'</title>'
+      +'<style>'+css+'</style><style>'+extra+'</style></head><body>'
+      +'<div class="module-is"><div class="panel active is-print-wrap">'
+      +(sc&&sc.innerHTML.trim()?('<div class="summary-cards">'+sc.innerHTML+'</div>'):'')
+      +cont.innerHTML
+      +'</div></div></body></html>');
+    w.document.close();w.focus();
+    setTimeout(()=>{try{w.print();}catch(e){}},450);
+  }
+
   function destroy(){
     if(_focusHandler){window.removeEventListener('focus',_focusHandler);_focusHandler=null;}
     delete window.is;
@@ -9668,7 +9694,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
   window.YANZ.modules.is={
     template:TEMPLATE,
     init(){
-      window.is={go,loadAll,onPeriodTypeChange,renderStatement,renderSalesMix};
+      window.is={go,loadAll,onPeriodTypeChange,renderStatement,renderSalesMix,printStatement};
       init();
     },
     destroy
