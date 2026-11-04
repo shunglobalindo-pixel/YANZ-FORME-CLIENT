@@ -1477,6 +1477,122 @@ body{background:#F7F6F2;color:#1C1C1A;font-size:13px;overflow:hidden}
 .module-position .pill{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700}
 .module-position .pill-in{background:#F0FDF4;color:#16A34A}
 .module-position .pill-out{background:#FEF2F2;color:#DC2626}
+
+/* ════════════════════════════════════════════════════════════
+   RESPONSIF HP — rapikan semua tab di layar sempit (≤780px)
+   ════════════════════════════════════════════════════════════ */
+@media(max-width:780px){
+  /* Header lebih ringkas */
+  .top-bar{padding:11px 14px}
+  .top-bar h1{font-size:15px}
+  .top-bar .crumb{font-size:10px}
+  .top-bar-actions{gap:7px}
+
+  /* Padding kontainer dikecilkan supaya konten lega di layar sempit */
+  .module-container{padding:14px}
+  [class^="module-"] .card{padding:14px;margin-bottom:12px}
+
+  /* Subtab bar: margin negatif disamakan dgn padding kontainer (14px)
+     supaya tidak memicu scroll horizontal; isi tetap bisa digeser */
+  [class^="module-"] [class$="-subtabs"]{margin:-14px -14px 0 -14px;top:-14px;padding:0 8px}
+
+  /* Kartu ringkasan/KPI (semua modul): 4 kolom → 2 kolom */
+  [class^="module-"] .kpi-grid,
+  [class^="module-"] .summary-cards,
+  [class^="module-"] .srow,
+  [class^="module-"] .draft-stats,
+  [class^="module-"] .budget-grid,
+  [class^="module-"] .stat-grid{grid-template-columns:repeat(2,1fr);gap:8px}
+  [class^="module-"] .kpi-val{font-size:18px}
+
+  /* Grid analitik 3 kolom → 1 kolom */
+  [class^="module-"] .ratio-grid,
+  [class^="module-"] .channel-grid,
+  [class^="module-"] .eq-grid{grid-template-columns:1fr}
+
+  /* Form grid 2/3 kolom → tumpuk jadi 1 kolom */
+  [class^="module-"] .fg2,
+  [class^="module-"] .fg3{grid-template-columns:1fr;gap:10px}
+
+  /* Baris laporan (Income Statement & Cashflow): kolom angka mengikuti
+     konten + label menyusut (minmax 0) supaya muat tanpa terpotong */
+  .module-is .is-document{padding:14px}
+  .module-is .is-row{grid-template-columns:minmax(0,1fr) auto auto;gap:8px;font-size:12px}
+  .module-cashflow .cf-row{grid-template-columns:minmax(0,1fr) auto auto;gap:8px;font-size:12px}
+  .module-cashflow .cf-summary-row{grid-template-columns:minmax(0,1fr) auto;gap:8px;font-size:12px}
+  .module-is .is-row .label,
+  .module-cashflow .cf-row .label{min-width:0;overflow-wrap:anywhere}
+  .module-is .is-row.grand{margin-left:-10px;margin-right:-10px}
+
+  /* Baris editor item yang tiap field-nya sudah berlabel/placeholder sendiri:
+     tumpuk 1 kolom supaya field lebar penuh & tidak meluber ke samping */
+  [class^="module-"] .oi-grid,
+  [class^="module-"] .oi-top,
+  [class^="module-"] .oir-top,
+  [class^="module-"] .addon-row,
+  [class^="module-"] .pkg-addon-row{grid-template-columns:1fr;gap:6px}
+  [class^="module-"] .oi-grid>button,
+  [class^="module-"] .oi-top>button,
+  [class^="module-"] .oir-top>button,
+  [class^="module-"] .addon-row>button,
+  [class^="module-"] .pkg-addon-row>button{justify-self:end}
+
+  /* Baris yg mengandalkan header kolom (tier) atau tampilan tabular/visual
+     (subkategori, waterfall): JANGAN ditumpuk (nanti field tanpa label),
+     tapi disusutkan agar muat — header .tier-hd tetap tampil & sejajar */
+  [class^="module-"] .tier-hd,
+  [class^="module-"] .tier-row{grid-template-columns:repeat(4,minmax(0,1fr)) 26px;gap:5px}
+  [class^="module-"] .tier-row input{min-width:0;padding:7px 5px;font-size:11px}
+  [class^="module-"] .tier-hd span{font-size:9px;line-height:1.2}
+  [class^="module-"] .subcategory-row{grid-template-columns:minmax(0,1.3fr) minmax(0,.7fr) minmax(0,1fr) minmax(0,1fr) auto;gap:6px}
+  [class^="module-"] .wf-row{grid-template-columns:minmax(0,1.3fr) 16px minmax(0,1fr) auto;gap:6px}
+
+  /* Baris transaksi (Kas/Cashflow/Pengeluaran): kolom deskripsi dibuat bisa
+     menyusut (minmax 0) supaya nominal tidak terdorong keluar layar */
+  [class^="module-"] .movement-row,
+  [class^="module-"] .flow-row{grid-template-columns:auto minmax(0,1fr) auto auto;gap:8px}
+  /* exp-row (5 kolom) dibuat membungkus: baris 1 = ikon + rincian + nominal,
+     baris 2 = badge + tombol hapus — biar deskripsi tidak terjepit */
+  [class^="module-"] .exp-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
+  [class^="module-"] .exp-row>*{min-width:0}
+  [class^="module-"] .exp-row>div:nth-child(2){flex:1 1 60%}
+  [class^="module-"] .exp-row>.exp-amount{margin-left:auto;flex:0 0 auto;order:1}
+  [class^="module-"] .exp-row>div:nth-child(3){order:2;flex:0 0 auto}
+  [class^="module-"] .exp-row>button{order:3;flex:0 0 auto}
+
+  /* Riwayat batch FIFO (.bi): info di atas, harga + sisa pindah ke baris
+     bawah (indent) biar angka tidak patah di tengah; tombol hapus pojok
+     kanan-atas kartu */
+  [class^="module-"] .bi{flex-wrap:wrap;row-gap:6px;position:relative}
+  [class^="module-"] .bi .bii{min-width:0;flex:1 1 auto;padding-right:30px}
+  [class^="module-"] .bi>button{position:absolute;top:10px;right:10px;flex:0 0 auto}
+  [class^="module-"] .bi .bir{flex:1 1 100%;text-align:left;padding-left:34px;display:flex;gap:14px;align-items:baseline}
+  [class^="module-"] .bi .bic,
+  [class^="module-"] .bi .birs{white-space:nowrap}
+
+  /* Baris tombol & pemilih periode membungkus rapi, input isi penuh */
+  [class^="module-"] .brow{flex-wrap:wrap}
+  [class^="module-"] .period-selector{width:100%}
+  [class^="module-"] .period-selector select,
+  [class^="module-"] .period-selector input{flex:1 1 120px;min-width:0}
+
+  /* Tabel lebar: geser di dalam wrappernya, jangan dorong lebar halaman */
+  [class^="module-"] .tw,
+  [class^="module-"] .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+  /* Preview invoice B2B lebih ramping */
+  [class^="module-"] .inv-preview{padding:16px}
+
+  /* Banner staff (Expense): pill limit turun ke bawah bila sempit */
+  [class^="module-"] .staff-banner{flex-wrap:wrap}
+  [class^="module-"] .staff-banner .limit{margin-top:4px}
+
+  /* Modal lebih ramping di HP */
+  [class^="module-"] .modal{padding:16px}
+
+  /* Jaring pengaman: tidak ada scroll horizontal di level halaman */
+  body{overflow-x:hidden}
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1788,7 +1904,10 @@ sb.auth.onAuthStateChange(async (event,session)=>{
     // cukup perbarui sesi, JANGAN loadUserRole/showApp (itu re-mount modul &
     // menghapus form/input yang belum disimpan). Hanya login awal / sign-in
     // yang perlu mount ulang.
-    if((event==='TOKEN_REFRESHED'||event==='USER_UPDATED')&&window.YANZ.role){return;}
+    // CATATAN: Supabase juga RE-FIRE 'SIGNED_IN' tiap tab balik fokus (re-validate
+    // sesi). Kalau app sudah jalan (role sudah ada), SIGNED_IN ulang ini HARUS
+    // diabaikan — kalau tidak, pindah tab/window = modul ter-reset & input hilang.
+    if((event==='TOKEN_REFRESHED'||event==='USER_UPDATED'||event==='SIGNED_IN'||event==='INITIAL_SESSION')&&window.YANZ.role){return;}
     await loadUserRole();
   } else {
     // Cleanup modul yang masih mounted sebelum balik ke login —
@@ -3961,15 +4080,45 @@ init();
     }catch(e){setMsg('❌ '+e.message,'#DC2626');console.error(e);}
   }
 
+  // Reverse FIFO: kembalikan qty ke batch (tertua dulu, isi sampai qty_purchased).
+  async function restoreToBatches(pid,qty){
+    let rem=num(qty);
+    const batches=BATCHES.filter(b=>b.product_id===pid).sort((a,b)=>new Date(a.po_date)-new Date(b.po_date));
+    for(const b of batches){
+      if(rem<=0)break;
+      const room=num(b.qty_purchased)-num(b.qty_remaining);
+      if(room<=0)continue;
+      const add=Math.min(rem,room);const nr=num(b.qty_remaining)+add;
+      await api('yanz_purchase_batches?id=eq.'+b.id,{method:'PATCH',body:JSON.stringify({qty_remaining:nr})});
+      const i=BATCHES.findIndex(x=>x.id===b.id);if(i>=0)BATCHES[i].qty_remaining=nr;
+      rem-=add;
+    }
+  }
+
   async function deleteOrder(id){
     if(window.YANZ.role!=='owner'){toast('❌ Hanya Owner');return;}
     if(!confirm('Hapus order ini? Tidak bisa dibatalkan.'))return;
     try{
+      let ord=ORDERS.find(o=>o.id===id);
+      if(!ord){try{ord=(await api('yanz_sales_orders?id=eq.'+id+'&select=workflow_status,invoice_number'))[0];}catch(e){}}
+      // Stok B2B HANYA terpotong saat order sudah DIKIRIM (sent/partial_paid/paid).
+      // Draft/Quotation belum potong stok → tak perlu dikembalikan.
+      const shipped=['sent','partial_paid','paid'].includes(ord?.workflow_status||'');
+      if(shipped){
+        // Kembalikan stok produk (bundle-aware) + packaging — reverse FIFO.
+        let items=[];try{items=await api('yanz_order_items?order_id=eq.'+id+'&select=product_id,qty');}catch(e){}
+        for(const it of items){for(const comp of resolveBundle(it.product_id,num(it.qty)))await restoreToBatches(comp.component_id,num(comp.qty));}
+        let pkgs=[];try{pkgs=await api('yanz_order_packaging?order_id=eq.'+id+'&select=packaging_id,qty_used');}catch(e){}
+        for(const pk of pkgs)await restoreToBatches(pk.packaging_id,num(pk.qty_used));
+        // Hapus catatan pergerakan stok (reference = no. invoice / fallback 'B2B-'+id).
+        const refs=new Set();if(ord?.invoice_number)refs.add(ord.invoice_number);refs.add('B2B-'+String(id).slice(0,8));
+        for(const rf of refs){try{await api('yanz_stock_movements?reference=eq.'+encodeURIComponent(rf),{method:'DELETE'});}catch(e){}}
+      }
       await api('yanz_order_packaging?order_id=eq.'+id,{method:'DELETE'});
       await api('yanz_order_items?order_id=eq.'+id,{method:'DELETE'});
       await api('yanz_payments?order_id=eq.'+id,{method:'DELETE'});
       await api('yanz_sales_orders?id=eq.'+id,{method:'DELETE'});
-      await loadAll();toast('Order dihapus ✓');
+      await loadAll();toast(shipped?'Order dihapus ✓ — stok dikembalikan':'Order dihapus ✓');
     }catch(e){toast('❌ '+e.message);}
   }
 
@@ -5059,6 +5208,15 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       if(!val.valid&&!val.warning)invalidIds.push(`Item #${i+1}: ${val.reason}`);
     }
     if(invalidIds.length){setMsg('❌ Order ID error: '+invalidIds[0],'#DC2626');return;}
+    // Cegah DOUBLE-ENTRY host live: Order ID yang SUDAH tercatat (sesi live lain / hasil import) tak boleh diinput ulang.
+    // Host input Order ID → tersimpan di order_items.order_ref; kalau sudah ada, tolak supaya tak dobel.
+    try{
+      const dupRefs=[...new Set(validItems.map(i=>String(i.orderRef||'').trim()).filter(Boolean))];
+      for(const rf of dupRefs){
+        const ex=await api('yanz_order_items?order_ref=eq.'+encodeURIComponent(rf)+'&select=id&limit=1');
+        if(ex.length){setMsg('❌ Order ID '+rf+' sudah pernah diinput (sesi lain / import) — tidak boleh dobel. Hapus entri lama dulu bila mau ubah.','#DC2626');return;}
+      }
+    }catch(e){/* cek gagal → jangan halangi input yang sah */}
     for(const item of validItems){
       const avail=getAvailable(item.prodId);
       const prod=PRODUCTS.find(p=>p.id===item.prodId);
@@ -5982,6 +6140,20 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     }
   }
 
+  // ── NSA-lock: blokir hapus HANYA jika order masih ter-match ke settlement yang HIDUP (status ≠ rejected).
+  //    Match yatim (settlement sudah di-reject tapi order_items.nsa_status masih 'matched') TIDAK memblokir hapus.
+  async function _liveNsaIdSet(){
+    try{
+      const pg=async(base)=>{const out=[];let off=0;for(;;){const sep=base.indexOf('?')>=0?'&':'?';const chunk=await api(base+sep+'limit=1000&offset='+off);out.push(...chunk);if(chunk.length<1000)break;off+=1000;}return out;};
+      const setts=await pg('yanz_marketplace_settlements?status=neq.rejected&select=id');
+      const sids=new Set(setts.map(s=>s.id));
+      const nsaRows=await pg('yanz_order_nsa?select=id,settlement_id');
+      return {ids:new Set(nsaRows.filter(n=>sids.has(n.settlement_id)).map(n=>n.id)),ok:true};
+    }catch(e){console.error('muat liveNsaIds gagal',e);return {ids:new Set(),ok:false};}
+  }
+  // live tak ada / gagal dimuat → fallback konservatif: setiap item 'matched' memblokir (perilaku lama).
+  function _nsaLocked(items,live){return items.some(it=>it.nsa_status==='matched'&&(!live||!live.ok||(it.nsa_id&&live.ids.has(it.nsa_id))));}
+
   // Hapus penjualan berdasarkan Order ID (referensi): kembalikan stok + hapus order
   async function deleteSaleByRef(ref){
     if(role!=='owner'){toast('❌ Hanya Owner yang bisa hapus penjualan');return;}
@@ -5990,8 +6162,9 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     try{orders=await api('yanz_sales_orders?reference=eq.'+encodeURIComponent(ref)+'&select=id,reference');}catch(e){toast('❌ '+e.message);return;}
     if(!orders.length){toast('Penjualan tidak ditemukan');return;}
     let allItems=[];
-    for(const o of orders){try{const its=await api('yanz_order_items?order_id=eq.'+o.id+'&select=id,product_id,qty,nsa_status');allItems=allItems.concat(its);}catch(e){}}
-    if(allItems.some(it=>it.nsa_status==='matched')){toast('❌ Order ini sudah ter-match NSA — batalkan match di modul NSA dulu, baru bisa dihapus.');return;}
+    for(const o of orders){try{const its=await api('yanz_order_items?order_id=eq.'+o.id+'&select=id,product_id,qty,nsa_status,nsa_id,order_ref');allItems=allItems.concat(its);}catch(e){}}
+    const live=await _liveNsaIdSet();
+    if(_nsaLocked(allItems,live)){toast('❌ Order ini sudah ter-match NSA — batalkan match di modul NSA dulu, baru bisa dihapus.');return;}
     const desc=allItems.map(it=>{const p=P.find(x=>x.id===it.product_id);return (p?.name||'?')+' ×'+it.qty;}).join(', ');
     if(!confirm(`Hapus penjualan Order ID "${ref}"?\n\nIsi: ${desc||'(tidak ada item)'}\n\nStok akan DIKEMBALIKAN & penjualan dihapus. Tidak bisa di-undo.`))return;
     try{
@@ -6007,9 +6180,9 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
         let pkgs=[];try{pkgs=await api('yanz_order_packaging?order_id=eq.'+o.id+'&select=packaging_id,qty_used');}catch(e){}
         for(const pk of pkgs)await restoreToBatches(pk.packaging_id,num(pk.qty_used));
       }
-      // 3. Hapus pergerakan stok (by reference) + order_packaging + order_items + order.
+      // 3. Hapus pergerakan stok (by reference order + order_ref item — Live: stock_movements pakai Order ID asli, beda dari reference 'LIVE-…') + order_packaging + order_items + order.
       //    order_items WAJIB dihapus eksplisit (tak ada cascade di DB) — kalau tidak, item yatim & Gross NSA/Income Statement tetap terhitung.
-      try{await api('yanz_stock_movements?reference=eq.'+encodeURIComponent(ref),{method:'DELETE'});}catch(e){}
+      {const _mref=new Set([ref]);allItems.forEach(it=>{if(it.order_ref)_mref.add(it.order_ref);});for(const rf of _mref){try{await api('yanz_stock_movements?reference=eq.'+encodeURIComponent(rf),{method:'DELETE'});}catch(e){}}}
       for(const o of orders){
         try{await api('yanz_order_packaging?order_id=eq.'+o.id,{method:'DELETE'});}catch(e){}
         try{await api('yanz_order_items?order_id=eq.'+o.id,{method:'DELETE'});}catch(e){}
@@ -6486,9 +6659,16 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
 
   function _ttLines(wb){
     const rows=_impRows(wb,'OrderSKUList');if(!rows)return null;
+    // Kolom dipetakan berdasarkan NAMA header (fallback ke posisi lama bila tak ketemu).
+    // TikTok sering menggeser urutan kolom → by-name bikin pembacaan omzet tahan banting.
+    const H={};(rows[0]||[]).forEach((h,i)=>{const k=String(h==null?'':h).trim().toLowerCase();if(k&&!(k in H))H[k]=i;});
+    const C=(name,def)=>{const k=name.trim().toLowerCase();return (k in H)?H[k]:def;};
+    const ix={id:C('Order ID',0),date:C('RTS Time',31),status:C('Order Status',1),ret:C('Cancelation/Return Type',3),pay:C('Payment Method',54),sku:C('Seller SKU',6),qty:C('Quantity',9),after:C('SKU Subtotal After Discount',15),platDisc:C('SKU Platform Discount',13)};
     const out=[];
-    for(const r of rows){const oid=String(r[0]||'').trim();if(!/^\d{15,20}$/.test(oid))continue; // skip header/deskripsi/ringkasan
-      out.push({orderId:oid,date:_ttDate(r[31]),status:String(r[1]||'').trim(),ret:String(r[3]||'').trim(),pay:String(r[54]||'').trim(),sku:String(r[6]||'').trim(),qty:_ttNum(r[9]),lineRev:_ttNum(r[15])+_ttNum(r[13])});}
+    for(const r of rows){const oid=String(r[ix.id]||'').trim();if(!/^\d{15,20}$/.test(oid))continue; // skip header/deskripsi/ringkasan
+      // Omzet seller/baris = "SKU Subtotal After Discount" (dibayar pembeli stlh diskon) +
+      // "SKU Platform Discount" (disubsidi TikTok, direimburse ke seller).
+      out.push({orderId:oid,date:_ttDate(r[ix.date]),status:String(r[ix.status]||'').trim(),ret:String(r[ix.ret]||'').trim(),pay:String(r[ix.pay]||'').trim(),sku:String(r[ix.sku]||'').trim(),qty:_ttNum(r[ix.qty]),lineRev:_ttNum(r[ix.after])+_ttNum(r[ix.platDisc])});}
     return out;
   }
   function _spLines(wb){
@@ -6641,6 +6821,10 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       if(dupSO.length)return {short:0,otherCount:0,skipped:true};
       const dupOI=await api('yanz_other_income?category=eq.'+encodeURIComponent(OI_CAT)+'&reference=eq.'+encodeURIComponent(o.orderId)+'&select=id&limit=1');
       if(dupOI.length)return {short:0,otherCount:0,skipped:true};
+      // Order ID yang sudah diinput host live tersimpan di order_items.order_ref (sales_order.reference-nya 'LIVE-…', BUKAN Order ID).
+      // Tanpa cek ini, import Excel bikin DOBEL (penjualan Live + penjualan import untuk Order ID yang sama).
+      const dupItem=await api('yanz_order_items?order_ref=eq.'+encodeURIComponent(o.orderId)+'&select=id&limit=1');
+      if(dupItem.length)return {short:0,otherCount:0,skipped:true};
     }catch(e){/* kalau cek gagal, lanjut supaya tak menghalangi import yang sah */}
     const items=[],other=[];
     for(const l of o.lines){
@@ -6731,15 +6915,16 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     if(!confirm('⚠️ HAPUS SEMUA data import ecommerce?\n\n• '+refs.length+' Order ID penjualan → stok DIKEMBALIKAN (reverse FIFO)\n• '+oiRows.length+' baris Other Income (SKU tak terdaftar)\n• B2B TIDAK tersentuh\n• Order yang sudah ter-match NSA DILEWATI\n• TIDAK BISA DI-UNDO\n\nLanjut?'))return;
     const st=document.getElementById('imp-status');
     let done=0,del=0,skipped=0;
+    const live=await _liveNsaIdSet();
     for(const ref of refs){
       try{
         const orders=await api('yanz_sales_orders?channel=eq.ecommerce&reference=eq.'+encodeURIComponent(ref)+'&select=id');
         let items=[];
-        for(const o of orders){try{const its=await api('yanz_order_items?order_id=eq.'+o.id+'&select=id,product_id,qty,nsa_status');items=items.concat(its);}catch(e){}}
-        if(items.some(it=>it.nsa_status==='matched')){skipped++;done++;if(st)st.innerHTML='🗑️ Menghapus… '+done+'/'+refs.length+' ('+skipped+' dilewati NSA)';continue;}
+        for(const o of orders){try{const its=await api('yanz_order_items?order_id=eq.'+o.id+'&select=id,product_id,qty,nsa_status,nsa_id,order_ref');items=items.concat(its);}catch(e){}}
+        if(_nsaLocked(items,live)){skipped++;done++;if(st)st.innerHTML='🗑️ Menghapus… '+done+'/'+refs.length+' ('+skipped+' dilewati NSA)';continue;}
         for(const it of items){const prod=P.find(p=>p.id===it.product_id);if(prod&&prod.is_bundle){for(const c of BUNDLES.filter(b=>b.bundle_id===it.product_id))await restoreToBatches(c.component_id,num(it.qty)*num(c.qty_per_bundle));}else{await restoreToBatches(it.product_id,num(it.qty));}}
         for(const o of orders){let pkgs=[];try{pkgs=await api('yanz_order_packaging?order_id=eq.'+o.id+'&select=packaging_id,qty_used');}catch(e){}for(const pk of pkgs)await restoreToBatches(pk.packaging_id,num(pk.qty_used));}
-        try{await api('yanz_stock_movements?reference=eq.'+encodeURIComponent(ref),{method:'DELETE'});}catch(e){}
+        {const _mref=new Set([ref]);items.forEach(it=>{if(it.order_ref)_mref.add(it.order_ref);});for(const rf of _mref){try{await api('yanz_stock_movements?reference=eq.'+encodeURIComponent(rf),{method:'DELETE'});}catch(e){}}}
         for(const o of orders){
           try{await api('yanz_order_packaging?order_id=eq.'+o.id,{method:'DELETE'});}catch(e){}
           try{await api('yanz_order_items?order_id=eq.'+o.id,{method:'DELETE'});}catch(e){}   // WAJIB: kalau tidak, order_items yatim & Gross NSA tetap membengkak
@@ -6761,15 +6946,49 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     await loadAll();renderImportBatches();
   }
 
+  // Hapus HANYA penjualan INPUT LIVE (reference 'LIVE-…') — bukan hasil Import Excel. Stok dikembalikan (reverse FIFO).
+  // Dipakai untuk reset entri host live (mis. double-entry awal). Order yang sudah match NSA (hidup) dilewati.
+  async function deleteAllLiveSales(){
+    if(role!=='owner'){toast('❌ Hanya Owner');return;}
+    let orders=[];
+    try{orders=await api('yanz_sales_orders?channel=eq.ecommerce&select=id,reference,order_date,total_revenue,customer_name&limit=100000');}catch(e){toast('❌ '+e.message);return;}
+    const liveOrders=orders.filter(o=>String(o.reference||'').startsWith('LIVE-'));   // JS filter → hindari wildcard PostgREST
+    if(!liveOrders.length){toast('Tidak ada penjualan input Live untuk dihapus');return;}
+    if(!confirm('⚠️ HAPUS SEMUA '+liveOrders.length+' penjualan INPUT LIVE (reference LIVE-…)?\n\n• Stok DIKEMBALIKAN (reverse FIFO)\n• Hasil Import Excel TIDAK tersentuh\n• B2B TIDAK tersentuh\n• Order yang sudah match NSA DILEWATI\n• Rekap CSV diunduh dulu\n• TIDAK BISA DI-UNDO\n\nLanjut?'))return;
+    try{_exportLiveSalesCsv(liveOrders);}catch(e){console.warn('export live gagal',e.message);}
+    const st=document.getElementById('imp-status');
+    const live=await _liveNsaIdSet();
+    let done=0,del=0,skipped=0;
+    for(const o of liveOrders){
+      try{const res=await _purgeEcomOrder(o,live);if(res==='skipped')skipped++;else del++;}
+      catch(e){console.error('hapus live gagal',o.reference,e);}
+      done++;if(st)st.innerHTML='🗑️ Menghapus input live… '+done+'/'+liveOrders.length+(skipped?' ('+skipped+' dilewati NSA)':'');
+    }
+    toast('✓ '+del+' penjualan input Live dihapus & stok dikembalikan'+(skipped?', '+skipped+' dilewati (NSA)':''));
+    if(st)st.innerHTML='<span style="color:#16A34A">✓ '+del+' penjualan input Live dihapus'+(skipped?', '+skipped+' dilewati NSA':'')+'.</span>';
+    await loadAll();renderImportBatches();
+  }
+  // Unduh rekap CSV penjualan input live sebelum dihapus (komisi host sudah dibayar → simpan jejak).
+  function _exportLiveSalesCsv(rows){
+    const head=['reference','order_date','customer_name','total_revenue'];
+    const esc=v=>{const s=String(v==null?'':v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+    const csv=[head.join(',')].concat(rows.map(o=>[o.reference,o.order_date,o.customer_name,o.total_revenue].map(esc).join(','))).join('\n');
+    const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');
+    a.href=url;a.download='penjualan_input_live_'+new Date().toISOString().split('T')[0]+'.csv';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+
   // Hapus 1 order ecommerce: kembalikan stok (produk + packaging, bundle-aware), lewati kalau sudah match NSA.
   // return 'skipped' | 'deleted'
-  async function _purgeEcomOrder(o){
-    let items=[];try{items=await api('yanz_order_items?order_id=eq.'+o.id+'&select=id,product_id,qty,nsa_status');}catch(e){}
-    if(items.some(it=>it.nsa_status==='matched'))return 'skipped';
+  async function _purgeEcomOrder(o,live){
+    let items=[];try{items=await api('yanz_order_items?order_id=eq.'+o.id+'&select=id,product_id,qty,nsa_status,nsa_id,order_ref');}catch(e){}
+    if(_nsaLocked(items,live))return 'skipped';
     for(const it of items){const prod=P.find(p=>p.id===it.product_id);if(prod&&prod.is_bundle){for(const c of BUNDLES.filter(b=>b.bundle_id===it.product_id))await restoreToBatches(c.component_id,num(it.qty)*num(c.qty_per_bundle));}else{await restoreToBatches(it.product_id,num(it.qty));}}
     let pkgs=[];try{pkgs=await api('yanz_order_packaging?order_id=eq.'+o.id+'&select=packaging_id,qty_used');}catch(e){}
     for(const pk of pkgs)await restoreToBatches(pk.packaging_id,num(pk.qty_used));
-    if(o.reference){try{await api('yanz_stock_movements?reference=eq.'+encodeURIComponent(o.reference),{method:'DELETE'});}catch(e){}}
+    // Hapus pergerakan stok: by reference order (import = Order ID) DAN by order_ref item (Live: stock_movements pakai Order ID asli, beda dari reference 'LIVE-…').
+    {const _mref=new Set();if(o.reference)_mref.add(o.reference);items.forEach(it=>{if(it.order_ref)_mref.add(it.order_ref);});for(const rf of _mref){try{await api('yanz_stock_movements?reference=eq.'+encodeURIComponent(rf),{method:'DELETE'});}catch(e){}}}
     try{await api('yanz_order_packaging?order_id=eq.'+o.id,{method:'DELETE'});}catch(e){}
     try{await api('yanz_order_items?order_id=eq.'+o.id,{method:'DELETE'});}catch(e){}   // WAJIB: cegah order_items yatim
     await api('yanz_sales_orders?id=eq.'+o.id,{method:'DELETE'});
@@ -6850,8 +7069,9 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     if(!confirm('⚠️ Hapus '+orders.length+' order + '+ois.length+' baris Other Income dari '+label+'?\n\n• Stok DIKEMBALIKAN (reverse FIFO)\n• Order yang sudah match NSA DILEWATI\n• B2B tak tersentuh\n• TIDAK BISA DI-UNDO\n\nLanjut?'))return;
     const st=document.getElementById('imp-status');
     let done=0,del=0,skipped=0;
+    const live=await _liveNsaIdSet();
     for(const o of orders){
-      try{const res=await _purgeEcomOrder(o);if(res==='skipped')skipped++;else del++;}
+      try{const res=await _purgeEcomOrder(o,live);if(res==='skipped')skipped++;else del++;}
       catch(e){console.error('hapus batch gagal',o.reference,e);}
       done++;if(st)st.innerHTML='🗑️ Menghapus… '+done+'/'+orders.length+(skipped?' ('+skipped+' dilewati NSA)':'');
     }
@@ -7061,6 +7281,11 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       <p style="font-size:12px;color:#991B1B;margin-bottom:12px;line-height:1.6">Hapus <strong>SEMUA</strong> penjualan ecommerce sekaligus &amp; kembalikan stok (semua batch), <strong>termasuk Other Income (SKU tak terdaftar)</strong> hasil import. Pakai hanya kalau mau import ulang dari nol. <strong>B2B tidak tersentuh.</strong> Order yang sudah ter-match NSA dilewati.</p>
       <button class="btn btn-d" onclick="inv.deleteAllEcommerceSales()">🗑️ Hapus Semua Penjualan Ecommerce</button>
     </div>
+    <div class="card oo" style="border-color:#FDBA74;background:#FFF7ED">
+      <div class="chd"><span class="dot" style="background:#EA580C"></span>Reset Penjualan Input Live</div>
+      <p style="font-size:12px;color:#9A3412;margin-bottom:12px;line-height:1.6">Hapus <strong>HANYA</strong> penjualan yang diinput lewat <strong>Input Live</strong> (reference <code>LIVE-…</code>) &amp; kembalikan stok (reverse FIFO). Hasil <strong>Import Excel</strong> &amp; <strong>B2B tidak tersentuh</strong>. Order yang sudah ter-match NSA dilewati. Rekap CSV otomatis diunduh sebelum hapus (komisi host sudah dibayar → simpan rekam jejak).</p>
+      <button class="btn btn-d" onclick="inv.deleteAllLiveSales()">🗑️ Hapus Semua Penjualan Input Live</button>
+    </div>
   </div>
   <div class="modal-bg" id="em" style="display:none" onclick="if(event.target===this)inv.closeEM()">
     <div class="modal">
@@ -7115,7 +7340,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
         setChannel,addOutItem,removeOutItem,addAddon,removeAddon,submitOut,
         setPOCat,filterPODropdown,onPPSelect,calcPO,submitPO,resetPO,onPOMethodChange,
         renderHist,
-        setImpPlatform,onImportFile,remapSku,setAutoCreate,toggleCOD,codAll,commitImport,deleteAllEcommerceSales,
+        setImpPlatform,onImportFile,remapSku,setAutoCreate,toggleCOD,codAll,commitImport,deleteAllEcommerceSales,deleteAllLiveSales,
         renderImportBatches,deleteImportBatch,
         renderShipConfig,addShipRow,removeShipRow,saveShipConfig
       };
@@ -8687,22 +8912,44 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     expandSheetRange(sheet);
     const data=XLSX.utils.sheet_to_json(sheet,{header:1,defval:0});
     if(data.length<2)return [];
+    // Kolom dipetakan berdasarkan NAMA header, BUKAN posisi. Export TikTok sering
+    // mengubah urutan & menambah puluhan kolom biaya baru (mis. Sep 2026: ongkir
+    // geser AH→AE, dinamis AQ→AN, proses AU→AR). Lookup by-name = tahan banting.
+    const H={};(data[0]||[]).forEach((h,i)=>{const k=String(h==null?'':h).trim().toLowerCase();if(k&&!(k in H))H[k]=i;});
+    const ci=name=>{const k=name.trim().toLowerCase();return (k in H)?H[k]:-1;};
+    const cell=(row,i)=>(i>=0&&i<row.length)?row[i]:0;
+    const c={
+      id:      ci('ID Pesanan/Penyesuaian'),
+      net:     ci('Jumlah penyelesaian pembayaran'), // net yang benar-benar diterima
+      total:   ci('Total Biaya'),                     // SELURUH potongan (otoritatif)
+      komisi:  ci('Biaya komisi platform'),
+      ongkir:  ci('Biaya layanan logistik'),
+      afiliasi:ci('Komisi Afiliasi'),
+      dinamis: ci('Komisi dinamis'),
+      proses:  ci('Biaya pemrosesan pesanan'),
+      odate:   ci('Waktu pemesanan'),
+      pdate:   ci('Waktu pembayaran pesanan'),
+    };
+    const idCol=c.id>=0?c.id:0;
     const records=[];
     for(let i=1;i<data.length;i++){
       const row=data[i];if(!row||!row.length)continue;
-      const orderId=String(row[0]||'').trim();if(!orderId||orderId==='0')continue;
-      // Terima baris hanya jika kolom A = Order ID TikTok valid (18 digit angka).
-      // Baris non-order (ringkasan, iklan, penyesuaian) otomatis ke-skip.
-      // (Dulu pakai filter kata di kolom B — terlalu agresif, banyak baris order ikut terbuang → cuma 18 kebaca.)
+      // Terima baris hanya jika Order ID TikTok valid (18 digit). Baris non-order
+      // (ringkasan, iklan, penyesuaian) otomatis ke-skip.
+      const orderId=String(cell(row,idCol)||'').trim();
       if(!/^\d{18}$/.test(orderId))continue;
-      const nsa=num(row[5]);
-      const komisi_platform=Math.abs(num(row[15]));
-      const perkiraan_ongkir=Math.abs(num(row[33]));
-      const komisi_dinamis=Math.abs(num(row[42]));
-      const biaya_proses=Math.abs(num(row[46]));
-      const komisi_affiliator=Math.abs(num(row[35]))+Math.abs(num(row[36]))+Math.abs(num(row[37]))+Math.abs(num(row[38]))+Math.abs(num(row[39]))+Math.abs(num(row[40]));
-      const totalCosts=komisi_platform+perkiraan_ongkir+komisi_dinamis+biaya_proses+komisi_affiliator;
-      records.push({order_ref:orderId,platform:'tiktok',nsa_amount:nsa,komisi_platform,perkiraan_ongkir,komisi_dinamis,biaya_proses,komisi_affiliator,total_marketplace_costs:totalCosts,order_date:row[2],paid_date:row[3]});
+      const nsa=num(cell(row,c.net));
+      const komisi_platform=Math.abs(num(cell(row,c.komisi)));
+      const perkiraan_ongkir=Math.abs(num(cell(row,c.ongkir)));   // "Biaya layanan logistik"
+      const komisi_affiliator=Math.abs(num(cell(row,c.afiliasi)));
+      const komisi_dinamis=Math.abs(num(cell(row,c.dinamis)));
+      const biaya_proses=Math.abs(num(cell(row,c.proses)));
+      const itemized=komisi_platform+perkiraan_ongkir+komisi_affiliator+komisi_dinamis+biaya_proses;
+      // Total Biaya (kolom O) = SELURUH potongan yang TikTok kutip, termasuk puluhan
+      // biaya lain yang tak kita rinci → dipakai sbg total otoritatif (≈17%).
+      const totalBiaya=Math.abs(num(cell(row,c.total)));
+      const totalCosts=totalBiaya>0?totalBiaya:itemized;
+      records.push({order_ref:orderId,platform:'tiktok',nsa_amount:nsa,komisi_platform,perkiraan_ongkir,komisi_dinamis,biaya_proses,komisi_affiliator,total_marketplace_costs:totalCosts,order_date:cell(row,c.odate),paid_date:cell(row,c.pdate)});
     }
     return records;
   }
@@ -9303,7 +9550,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     const confSet=new Set(SETTLEMENTS.filter(s=>s.status!=='draft'&&s.status!=='rejected').map(s=>s.id));
     const sessDate={};LIVESTREAM_SESSIONS.forEach(s=>{sessDate[s.id]=s.session_date;});
     const itemDate=id=>{const it=ORDER_ITEMS.find(o=>o.id===id);if(!it)return null;if(it.livestream_session_id&&sessDate[it.livestream_session_id])return sessDate[it.livestream_session_id];const ord=SALES_ORDERS.find(o=>o.id===it.order_id);return (ord&&ord.order_date)||it.created_at;};
-    const mk=()=>({komisi_platform:0,ongkir:0,affiliator:0,dinamis:0,proses:0,gratis_ongkir_xtra:0,voucher:0,total:0});
+    const mk=()=>({komisi_platform:0,ongkir:0,affiliator:0,dinamis:0,proses:0,gratis_ongkir_xtra:0,voucher:0,total:0,itemized:0});
     const tt=mk(),sh=mk();
     let refund=0;
     NSA_RECORDS.forEach(r=>{
@@ -9316,7 +9563,11 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       if(!b)return;
       const kp=num(r.komisi_platform),og=num(r.perkiraan_ongkir),af=num(r.komisi_affiliator),di=num(r.komisi_dinamis),pr=num(r.biaya_proses);
       const gx=num(r.gratis_ongkir_xtra),vc=num(r.voucher_seller); // 2 program khusus Shopee (slot sendiri)
-      b.komisi_platform+=kp;b.ongkir+=og;b.affiliator+=af;b.dinamis+=di;b.proses+=pr;b.gratis_ongkir_xtra+=gx;b.voucher+=vc;b.total+=kp+og+af+di+pr+gx+vc;
+      b.komisi_platform+=kp;b.ongkir+=og;b.affiliator+=af;b.dinamis+=di;b.proses+=pr;b.gratis_ongkir_xtra+=gx;b.voucher+=vc;
+      // Total potongan pakai "Total Biaya" (otoritatif, mencakup SEMUA biaya) kalau ada;
+      // kalau tidak, jatuh ke jumlah rincian. Rincian dilacak terpisah utk baris "lain-lain".
+      const itm=kp+og+af+di+pr+gx+vc,tmc=num(r.total_marketplace_costs);
+      b.itemized+=itm;b.total+=tmc>0?tmc:itm;
     });
     return {tt,sh,total:tt.total+sh.total,refund};
   }
@@ -9431,7 +9682,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     if(is.penjualanTT>0||is.potonganTT>0){
       const f=is.fees.tt;
       html+=`<div class="is-row neutral"><span class="label"><strong>Potongan TikTok</strong></span><span class="num"></span><span class="compare">${pctOf(is.potonganTT,is.penjualanTT)} dari gross</span></div>`;
-      html+=feeRow('Komisi Platform',f.komisi_platform)+feeRow('Biaya Layanan Logistik',f.ongkir)+feeRow('Komisi Affiliator',f.affiliator)+feeRow('Komisi Dinamis',f.dinamis)+feeRow('Biaya Proses Pesanan',f.proses)+feeRow('Gratis Ongkir XTRA',f.gratis_ongkir_xtra)+feeRow('Pemberian Voucher (Seller)',f.voucher);
+      html+=feeRow('Komisi Platform',f.komisi_platform)+feeRow('Biaya Layanan Logistik',f.ongkir)+feeRow('Komisi Affiliator',f.affiliator)+feeRow('Komisi Dinamis',f.dinamis)+feeRow('Biaya Proses Pesanan',f.proses)+feeRow('Gratis Ongkir XTRA',f.gratis_ongkir_xtra)+feeRow('Pemberian Voucher (Seller)',f.voucher)+feeRow('Biaya lain-lain',Math.max(0,num(f.total)-num(f.itemized)));
       html+=`<div class="is-row indent subtotal expense" style="font-size:12px"><span class="label">Subtotal Potongan TikTok</span><span class="num">(${rp(is.potonganTT)})</span><span class="compare">${pctOf(is.potonganTT,is.penjualanTT)}</span></div>`;
       html+=`<div class="is-row indent income"><span class="label">↳ NSA TikTok (net)</span><span class="num">${rp(is.nsaTT)}</span><span class="compare"></span></div>`;
     }
@@ -9439,7 +9690,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     if(is.penjualanShopee>0||is.potonganShopee>0){
       const f=is.fees.sh;
       html+=`<div class="is-row neutral"><span class="label"><strong>Potongan Shopee</strong></span><span class="num"></span><span class="compare">${pctOf(is.potonganShopee,is.penjualanShopee)} dari gross</span></div>`;
-      html+=feeRow('Komisi Platform / Administrasi',f.komisi_platform)+feeRow('Komisi Affiliator (AMS)',f.affiliator)+feeRow('Gratis Ongkir XTRA (Program Shopee)',f.gratis_ongkir_xtra)+feeRow('Pemberian Voucher (Seller)',f.voucher)+feeRow('Premi & Biaya Transaksi',f.dinamis)+feeRow('Biaya Proses Pesanan',f.proses)+feeRow('Biaya Layanan Logistik',f.ongkir);
+      html+=feeRow('Komisi Platform / Administrasi',f.komisi_platform)+feeRow('Komisi Affiliator (AMS)',f.affiliator)+feeRow('Gratis Ongkir XTRA (Program Shopee)',f.gratis_ongkir_xtra)+feeRow('Pemberian Voucher (Seller)',f.voucher)+feeRow('Premi & Biaya Transaksi',f.dinamis)+feeRow('Biaya Proses Pesanan',f.proses)+feeRow('Biaya Layanan Logistik',f.ongkir)+feeRow('Biaya lain-lain',Math.max(0,num(f.total)-num(f.itemized)));
       html+=`<div class="is-row indent subtotal expense" style="font-size:12px"><span class="label">Subtotal Potongan Shopee</span><span class="num">(${rp(is.potonganShopee)})</span><span class="compare">${pctOf(is.potonganShopee,is.penjualanShopee)}</span></div>`;
       html+=`<div class="is-row indent income"><span class="label">↳ NSA Shopee (net)</span><span class="num">${rp(is.nsaShopee)}</span><span class="compare"></span></div>`;
     }
