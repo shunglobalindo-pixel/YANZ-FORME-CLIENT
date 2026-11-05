@@ -6719,7 +6719,8 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       if(lines===null){if(st)st.innerHTML='<span style="color:#DC2626">❌ Sheet <code>'+(impPlatform==='tiktok'?'OrderSKUList':'orders')+'</code> tak ditemukan. Pastikan platform & file cocok.</span>';return;}
       if(!lines.length){if(st)st.innerHTML='<span style="color:#D97706">⚠️ Tidak ada baris order valid di file ini.</span>';return;}
       const orders=_group(impPlatform,lines);
-      // Order ID yang SUDAH ada (dari Live/input manual, ATAU import lama → Penjualan/Other Income) → jangan dobel
+      // Order ID yang SUDAH di-import (Penjualan ecommerce / Other Income, reference = Order ID) → jangan dobel.
+      // (Dup dari input Live dicek saat commit di recordOrder via order_ref — bukan di sini.)
       let existRefs=new Set();
       try{const ex=await api('yanz_sales_orders?channel=eq.ecommerce&select=reference');ex.forEach(x=>{if(x.reference)existRefs.add(String(x.reference));});}catch(e){}
       try{const oi=await api('yanz_other_income?category=eq.'+encodeURIComponent(OI_CAT)+'&select=reference');oi.forEach(x=>{if(x.reference)existRefs.add(String(x.reference));});}catch(e){}
@@ -6729,7 +6730,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       for(const o of orders){
         const c=_classify(o);
         if(c.cat==='skip'){skip.push({orderId:o.orderId,reason:c.reason});continue;}
-        if(existRefs.has(o.orderId)){skip.push({orderId:o.orderId,reason:'Sudah ada (Live/manual)'});continue;}
+        if(existRefs.has(o.orderId)){skip.push({orderId:o.orderId,reason:'Sudah di-import (ecommerce)'});continue;}
         o.total=0;
         o.lines.forEach(l=>{
           o.total+=l.lineRev;
