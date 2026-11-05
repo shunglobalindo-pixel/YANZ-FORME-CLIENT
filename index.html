@@ -6823,8 +6823,16 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       if(dupOI.length)return {short:0,otherCount:0,skipped:true};
       // Order ID yang sudah diinput host live tersimpan di order_items.order_ref (sales_order.reference-nya 'LIVE-…', BUKAN Order ID).
       // Tanpa cek ini, import Excel bikin DOBEL (penjualan Live + penjualan import untuk Order ID yang sama).
-      const dupItem=await api('yanz_order_items?order_ref=eq.'+encodeURIComponent(o.orderId)+'&select=id&limit=1');
-      if(dupItem.length)return {short:0,otherCount:0,skipped:true};
+      // PENTING: abaikan item YATIM (induk sales_order sudah terhapus — sisa hapus lama yang tak bersih),
+      // kalau tidak order yang SAH keliru dilewati. Hanya anggap dobel kalau INDUKNYA masih ada.
+      const dupItem=await api('yanz_order_items?order_ref=eq.'+encodeURIComponent(o.orderId)+'&select=order_id&limit=50');
+      if(dupItem.length){
+        const oids=[...new Set(dupItem.map(d=>d.order_id).filter(Boolean))];
+        if(oids.length){
+          const alive=await api('yanz_sales_orders?id=in.('+oids.join(',')+')&select=id&limit=1');
+          if(alive.length)return {short:0,otherCount:0,skipped:true};
+        }
+      }
     }catch(e){/* kalau cek gagal, lanjut supaya tak menghalangi import yang sah */}
     const items=[],other=[];
     for(const l of o.lines){
@@ -6977,6 +6985,35 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
     const url=URL.createObjectURL(blob);const a=document.createElement('a');
     a.href=url;a.download='penjualan_input_live_'+new Date().toISOString().split('T')[0]+'.csv';
     document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+
+  // Bersihkan order_items / order_packaging YATIM: baris yang INDUK sales_order-nya sudah tidak ada
+  // (sisa hapus Live/Import lama yang tak bersih). Item yatim bikin import keliru skip order sah &
+  // Gross NSA / Income Statement membengkak. Aman: cuma hapus yang BENAR-BENAR yatim + guard.
+  async function cleanOrphanItems(){
+    if(role!=='owner'){toast('❌ Hanya Owner');return;}
+    const st=document.getElementById('imp-status');
+    if(st)st.innerHTML='⏳ Memindai data yatim…';
+    const pg=async(base)=>{const out=[];let off=0;for(;;){const sep=base.indexOf('?')>=0?'&':'?';const chunk=await api(base+sep+'limit=1000&offset='+off);out.push(...chunk);if(chunk.length<1000)break;off+=1000;}return out;};
+    let soIds,items,pkgs;
+    try{
+      const so=await pg('yanz_sales_orders?select=id');
+      soIds=new Set(so.map(s=>s.id));
+      items=await pg('yanz_order_items?select=id,order_id');
+      pkgs=await pg('yanz_order_packaging?select=id,order_id');
+    }catch(e){toast('❌ Gagal memuat data: '+e.message);if(st)st.innerHTML='<span style="color:#DC2626">❌ '+e.message+'</span>';return;}
+    // GUARD anti-salah-hapus-massal: kalau sales_orders kosong/gagal termuat tapi masih ada item, JANGAN hapus apa pun.
+    if(!soIds.size&&(items.length||pkgs.length)){toast('⚠️ Dibatalkan: daftar sales_orders kosong/gagal dimuat — demi aman tak ada yang dihapus.');if(st)st.innerHTML='<span style="color:#D97706">⚠️ Dibatalkan demi keamanan (sales_orders tak termuat). Coba lagi.</span>';return;}
+    const oItems=items.filter(it=>!it.order_id||!soIds.has(it.order_id));
+    const oPkgs=pkgs.filter(p=>!p.order_id||!soIds.has(p.order_id));
+    if(!oItems.length&&!oPkgs.length){toast('✓ Tidak ada data yatim — sudah bersih');if(st)st.innerHTML='<span style="color:#16A34A">✓ Tidak ada order_items/packaging yatim. Data bersih.</span>';return;}
+    if(!confirm('Ditemukan data YATIM (induk sales_order sudah terhapus):\n• '+oItems.length+' order_items\n• '+oPkgs.length+' order_packaging\n\nIni bikin import keliru skip order sah & Gross NSA / Income Statement membengkak.\n\nHapus semuanya? TIDAK BISA DI-UNDO.'))return;
+    let di=0,dp=0;
+    for(const p of oPkgs){try{await api('yanz_order_packaging?id=eq.'+p.id,{method:'DELETE'});dp++;}catch(e){}if(st&&dp%20===0)st.innerHTML='🧹 Hapus packaging yatim… '+dp+'/'+oPkgs.length;}
+    for(const it of oItems){try{await api('yanz_order_packaging?order_item_id=eq.'+it.id,{method:'DELETE'});}catch(e){}try{await api('yanz_order_items?id=eq.'+it.id,{method:'DELETE'});di++;}catch(e){console.error('hapus item yatim gagal',it.id,e);}if(st&&di%20===0)st.innerHTML='🧹 Hapus item yatim… '+di+'/'+oItems.length;}
+    toast('✓ '+di+' item + '+dp+' packaging yatim dihapus');
+    if(st)st.innerHTML='<span style="color:#16A34A">✓ '+di+' order_items + '+dp+' order_packaging yatim dihapus. Parse ulang file importnya.</span>';
+    await loadAll();
   }
 
   // Hapus 1 order ecommerce: kembalikan stok (produk + packaging, bundle-aware), lewati kalau sudah match NSA.
@@ -7286,6 +7323,11 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       <p style="font-size:12px;color:#9A3412;margin-bottom:12px;line-height:1.6">Hapus <strong>HANYA</strong> penjualan yang diinput lewat <strong>Input Live</strong> (reference <code>LIVE-…</code>) &amp; kembalikan stok (reverse FIFO). Hasil <strong>Import Excel</strong> &amp; <strong>B2B tidak tersentuh</strong>. Order yang sudah ter-match NSA dilewati. Rekap CSV otomatis diunduh sebelum hapus (komisi host sudah dibayar → simpan rekam jejak).</p>
       <button class="btn btn-d" onclick="inv.deleteAllLiveSales()">🗑️ Hapus Semua Penjualan Input Live</button>
     </div>
+    <div class="card oo" style="border-color:#FDBA74;background:#FFF7ED">
+      <div class="chd"><span class="dot" style="background:#D97706"></span>Bersihkan Data Yatim (perbaiki dedup import keliru)</div>
+      <p style="font-size:12px;color:#9A3412;margin-bottom:12px;line-height:1.6">Hapus <strong>order_items / packaging yatim</strong> — baris yang <strong>induk ordernya sudah terhapus</strong> (sisa hapus Live/Import lama yang tak bersih). Ini penyebab import keliru <strong>melewati order yang sah</strong> &amp; bikin Gross NSA / Income Statement membengkak. <strong>Penjualan yang masih utuh TIDAK tersentuh.</strong> Tombol ini menghitung dulu berapa yang yatim sebelum menghapus.</p>
+      <button class="btn btn-d" onclick="inv.cleanOrphanItems()">🧹 Bersihkan Data Yatim</button>
+    </div>
   </div>
   <div class="modal-bg" id="em" style="display:none" onclick="if(event.target===this)inv.closeEM()">
     <div class="modal">
@@ -7340,7 +7382,7 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
         setChannel,addOutItem,removeOutItem,addAddon,removeAddon,submitOut,
         setPOCat,filterPODropdown,onPPSelect,calcPO,submitPO,resetPO,onPOMethodChange,
         renderHist,
-        setImpPlatform,onImportFile,remapSku,setAutoCreate,toggleCOD,codAll,commitImport,deleteAllEcommerceSales,deleteAllLiveSales,
+        setImpPlatform,onImportFile,remapSku,setAutoCreate,toggleCOD,codAll,commitImport,deleteAllEcommerceSales,deleteAllLiveSales,cleanOrphanItems,
         renderImportBatches,deleteImportBatch,
         renderShipConfig,addShipRow,removeShipRow,saveShipConfig
       };
