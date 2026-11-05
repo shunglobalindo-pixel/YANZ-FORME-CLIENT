@@ -6809,6 +6809,29 @@ body{background:#fff;color:#1C1C1A;font-size:12px}
       const g={};skip.forEach(s=>{g[s.reason]=(g[s.reason]||0)+1;});
       h+='<div class="card" style="background:#FAFAF8"><div class="sl2" style="margin-top:0">⏭️ Dilewati (tidak dicatat)</div><div style="font-size:12px;color:#666">'+Object.entries(g).map(([k,v])=>`${k}: <strong>${v}</strong>`).join(' · ')+'</div></div>';
     }
+    // ── Ringkasan STOK KURANG: unit yang AKAN dicommit tapi stoknya tak cukup ──
+    // Demand per produk/komponen (bundle → urai komponen) dari auto + COD tercentang, dibanding stok on-hand.
+    // Unit yang kurang nanti COGS-nya 0 (tak ada batch beli) → laba order itu overstated sampai PO diinput.
+    {
+      const _commit=auto.concat(codReady.filter(o=>o._approve));
+      const _dem=new Map();
+      for(const o of _commit)for(const l of (o.lines||[])){
+        const pr=l.prod;if(!pr)continue; // SKU tak dikenal → Other Income, tak potong stok
+        if(pr.is_bundle){for(const c of BUNDLES.filter(b=>b.bundle_id===pr.id))_dem.set(c.component_id,(_dem.get(c.component_id)||0)+num(l.qty)*num(c.qty_per_bundle));}
+        else _dem.set(pr.id,(_dem.get(pr.id)||0)+num(l.qty));
+      }
+      const _fq=n=>(Math.round(n*100)/100).toLocaleString('id-ID');
+      const _rows=[];let _tot=0;
+      for(const [pid,dq] of _dem){const av=stockOf(pid);const sh=dq-av;if(sh>0.0001){const p=P.find(x=>x.id===pid);_rows.push({pid,name:p?p.name:'(produk?)',sku:(p&&p.sku)||'',unit:(p&&p.unit)||'unit',need:dq,have:av,short:sh});_tot+=sh;}}
+      _rows.sort((a,b)=>b.short-a.short);
+      if(_rows.length){
+        h+='<div class="card" style="background:#FEF2F2;border-color:#FCA5A5"><div class="sl2" style="margin-top:0;color:#991B1B">⚠️ Stok kurang — '+_rows.length+' produk, total '+_fq(_tot)+' unit</div>';
+        h+='<p style="font-size:12px;color:#991B1B;margin-bottom:10px;line-height:1.6">Order tetap tercatat <strong>penuh revenue-nya</strong>, tapi unit yang kurang <strong>COGS-nya = 0</strong> (tak ada batch beli untuk dibebankan) → laba order itu <strong>terlihat lebih besar dari aslinya</strong>. Agar COGS benar: input <strong>PO</strong> produk ini dulu — atau commit sekarang, lalu hapus batch ini di Riwayat Import, input PO, dan import ulang.</p>';
+        h+='<div class="tw"><table><thead><tr><th>Produk</th><th style="text-align:right">Butuh</th><th style="text-align:right">Stok ada</th><th style="text-align:right">Kurang</th><th></th></tr></thead><tbody>';
+        for(const r of _rows)h+='<tr><td style="font-size:12px">'+(r.sku?'<span class="bx bgr">'+r.sku+'</span> ':'')+r.name+'</td><td style="text-align:right">'+_fq(r.need)+' '+r.unit+'</td><td style="text-align:right;color:#888">'+_fq(r.have)+'</td><td style="text-align:right;font-weight:700;color:#DC2626">'+_fq(r.short)+'</td><td><button class="btn btn-s btn-sm" onclick="inv.quickPO(\''+r.pid+'\')">+ PO</button></td></tr>';
+        h+='</tbody></table></div></div>';
+      }
+    }
     h+=`<div class="brow" style="margin-top:8px"><button class="btn btn-p" onclick="inv.commitImport()">✅ Commit ${auto.length} order${codReady.length?' (+ COD tercentang)':''} →</button><span id="imp-commit-st" style="font-size:12px;color:#888"></span></div>`;
     box.innerHTML=h;
   }
